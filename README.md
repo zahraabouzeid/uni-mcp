@@ -19,13 +19,15 @@ Unofficial, and not affiliated with any university.
 | `list_courses`      | The courses you are enrolled in                  |
 | `list_course_files` | Slides, exercise sheets and other course files   |
 | `list_assignments`  | Assignments and their deadlines                  |
-| `read_course_file`  | A course file: PDF or plain text                 |
+| `read_course_file`  | A course file: PDF, picture or plain text        |
 | `list_events`       | Your timetable: lectures, exercises, exam dates  |
 | `list_files`        | A folder in your cloud storage                   |
-| `read_file`         | A file from your cloud storage: PDF or text      |
+| `read_file`         | A file from your cloud storage, same formats     |
 | `status`            | Which services are connected                     |
 
-Scanned PDFs, which contain pictures of pages instead of text, cannot be read.
+A PDF is read as text, or page by page as pictures, so the AI also sees
+diagrams, formulas and scanned pages. Password-protected PDFs and Office files
+cannot be read yet.
 
 ## Safety
 
