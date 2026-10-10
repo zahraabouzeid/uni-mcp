@@ -3311,7 +3311,7 @@ dependencies = [
 
 [[package]]
 name = "uni-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "hayro",
@@ -3327,7 +3327,7 @@ dependencies = [
 
 [[package]]
 name = "uni-ical"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "jiff",
@@ -3338,7 +3338,7 @@ dependencies = [
 
 [[package]]
 name = "uni-mcp"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -3368,7 +3368,7 @@ dependencies = [
 
 [[package]]
 name = "uni-moodle"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -3382,7 +3382,7 @@ dependencies = [
 
 [[package]]
 name = "uni-webdav"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "percent-encoding",
