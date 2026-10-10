@@ -103,7 +103,7 @@ impl PartArgs {
 /// of PDF pages instead, at most 5 per call, so set `pages` to a range like
 /// `1-5`: use it for diagrams, formulas, tables and scans, where the text is
 /// not enough.
-#[derive(Clone, Copy, Default, Deserialize, schemars::JsonSchema)]
+#[derive(Clone, Copy, Default, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 enum ViewArg {
     #[default]
@@ -300,6 +300,8 @@ pub struct ParamInfo {
     pub required: bool,
     /// The allowed values, if the parameter only takes certain ones.
     pub options: Vec<String>,
+    /// The value used when the parameter is left out.
+    pub default: Option<String>,
 }
 
 /// The tools as the dashboard lists them, from the schema AI clients get.
@@ -342,6 +344,9 @@ fn params(schema: &serde_json::Map<String, Value>) -> Vec<ParamInfo> {
                     .unwrap_or_default()
                     .to_owned(),
                 required: required.contains(&name.as_str()),
+                default: described("default")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
                 options: described("enum")
                     .and_then(Value::as_array)
                     .map(|options| {
@@ -466,6 +471,7 @@ mod tests {
         let read = tools.iter().find(|t| t.name == "read_file").expect("tool");
         let view = read.params.iter().find(|p| p.name == "view").expect("view");
         assert_eq!(view.options, ["text", "pages"]);
+        assert_eq!(view.default.as_deref(), Some("text"));
         assert!(!view.required);
         assert!(view.description.contains("pictures"));
     }

@@ -94,6 +94,7 @@ export function Choice({
   label,
   options,
   required,
+  defaultValue,
   ...select
 }: { label: string; options: string[] } & SelectHTMLAttributes<HTMLSelectElement>) {
   return (
@@ -101,10 +102,11 @@ export function Choice({
       <span className="text-xs font-medium text-muted">{label}</span>
       <select
         required={required}
+        defaultValue={defaultValue}
         className="h-8 rounded-md border border-line bg-canvas px-2 text-ink outline-none focus:border-ink"
         {...select}
       >
-        {!required && <option value="" />}
+        {!required && defaultValue === undefined && <option value="" />}
         {options.map((option) => (
           <option key={option} value={option}>
             {option}

@@ -13,6 +13,7 @@ export type ToolParam = {
   description: string;
   required: boolean;
   options: string[];
+  default: string | null;
 };
 
 export type Tool = {

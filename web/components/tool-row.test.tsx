@@ -53,8 +53,8 @@ test("an optional parameter that is left empty is not sent", async () => {
   const user = show({
     name: "list_events",
     params: [
-      { name: "from", description: "First day.", required: false, options: [] },
-      { name: "search", description: "Title text.", required: false, options: [] },
+      { name: "from", description: "First day.", required: false, options: [], default: null },
+      { name: "search", description: "Title text.", required: false, options: [], default: null },
     ],
   });
 
@@ -88,14 +88,29 @@ test("a parameter with fixed choices is a list, and the page pictures are shown"
   const user = show({
     name: "read_file",
     params: [
-      { name: "path", description: "Path of the file.", required: true, options: [] },
-      { name: "view", description: "Text or pages.", required: false, options: ["text", "pages"] },
+      {
+        name: "path",
+        description: "Path of the file.",
+        required: true,
+        options: [],
+        default: null,
+      },
+      {
+        name: "view",
+        description: "Text or pages.",
+        required: false,
+        options: ["text", "pages"],
+        default: "text",
+      },
     ],
   });
 
   await user.click(screen.getByRole("button", { name: "Try" }));
   await user.type(screen.getByLabelText("path"), "Uni/slides.pdf");
-  await user.selectOptions(screen.getByLabelText("view (optional)"), "pages");
+  const view = screen.getByLabelText<HTMLSelectElement>("view (optional)");
+  expect(view.value).toBe("text");
+  expect(view.options.length).toBe(2);
+  await user.selectOptions(view, "pages");
   await user.click(screen.getByRole("button", { name: "Run" }));
 
   expect(api).toHaveBeenCalledWith("/tools/try", {
@@ -134,7 +149,7 @@ test("several page pictures are shown one at a time", async () => {
 test("running a tool again clears the previous result first", async () => {
   vi.mocked(api).mockResolvedValueOnce({ ok: true, output: "first answer", images: [] });
   const user = show({
-    params: [{ name: "path", description: "Path.", required: false, options: [] }],
+    params: [{ name: "path", description: "Path.", required: false, options: [], default: null }],
   });
 
   await user.click(screen.getByRole("button", { name: "Try" }));

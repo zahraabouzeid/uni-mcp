@@ -67,7 +67,12 @@ export function ToolRow({ tool }: { tool: Tool }) {
                 required: param.required,
               };
               return param.options.length > 0 ? (
-                <Choice key={param.name} options={param.options} {...field} />
+                <Choice
+                  key={param.name}
+                  options={param.options}
+                  defaultValue={param.default ?? undefined}
+                  {...field}
+                />
               ) : (
                 <Field key={param.name} {...field} />
               );
