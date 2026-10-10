@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for wanting to help. uni-mcp handles students' logins and university
+Thanks for wanting to help. uniMCP handles students' logins and university
 data, so a few rules are strict.
 
 ## Rules

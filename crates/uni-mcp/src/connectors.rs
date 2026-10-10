@@ -192,7 +192,7 @@ impl Connectors {
 
     fn not_offered(&self, what: &str) -> Error {
         Error::Config(format!(
-            "{} does not have {what} in uni-mcp",
+            "{} does not have {what} in uniMCP",
             self.profile.name
         ))
     }

@@ -1,6 +1,6 @@
-# uni-mcp
+# uniMCP
 
-I built uni-mcp during my studies in Computational Engineering Science at RWTH
+I built uniMCP during my studies in Computational Engineering Science at RWTH
 Aachen University, to let an AI app help me with my own courses, files and
 timetable.
 
