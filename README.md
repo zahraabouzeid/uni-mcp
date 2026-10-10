@@ -49,8 +49,8 @@ A university is one file in [`profiles`](profiles). To add yours, see
 Download `unimcp` for your system from the
 [releases page](https://github.com/zahraabouzeid/uni-mcp/releases) and run it.
 
-It opens a page in your browser where you connect your services, try the tools,
-and get the line that adds it to your AI app.
+It opens the dashboard in your browser, where you connect your services, try
+the tools, and get the line that adds it to your AI app.
 
 Browser sign-in for Moodle works on Windows only for now; elsewhere
 `unimcp login moodle` asks you to paste a link.

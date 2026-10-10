@@ -207,7 +207,7 @@ pub struct ParamInfo {
     pub required: bool,
 }
 
-/// The tools as the setup page lists them, from the schema AI clients get.
+/// The tools as the dashboard lists them, from the schema AI clients get.
 pub fn tools() -> Vec<ToolInfo> {
     UniServer::tool_router()
         .list_all()
@@ -255,7 +255,7 @@ fn service_of(tool: &str) -> Option<ServiceKind> {
     }
 }
 
-/// Runs one tool the way an AI client would, for the Try button of the setup page.
+/// Runs one tool the way an AI client would, for the Try button of the dashboard.
 pub async fn try_tool(connectors: Connectors, name: &str, arguments: Value) -> ToolResult {
     let server = UniServer::new(connectors);
     match name {

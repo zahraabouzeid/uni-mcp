@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   web:
-    name: Setup page
+    name: Dashboard
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -30,12 +30,12 @@ jobs:
       - run: npm run build
       - uses: actions/upload-artifact@v4
         with:
-          name: setup-page
+          name: dashboard
           path: web/out
 
   rust:
     name: Rust (${{ matrix.os }})
-    # The binary embeds the built page.
+    # The binary embeds the built dashboard.
     needs: web
     runs-on: ${{ matrix.os }}
     strategy:
@@ -46,7 +46,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: setup-page
+          name: dashboard
           path: web/out
       - uses: dtolnay/rust-toolchain@stable
         with:

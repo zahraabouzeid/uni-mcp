@@ -20,7 +20,7 @@ export type Tool = {
 
 export type ToolRun = { ok: boolean; output: string };
 
-export type SetupState = {
+export type DashboardState = {
   universities: University[];
   selected: string | null;
   services: Service[];

@@ -29,7 +29,7 @@ async function startBackend() {
     console.log("\n[dev] The backend did not compile. Fix the error and save again.\n");
     return;
   }
-  backend = spawn(unimcp, ["setup", "--dev"], {
+  backend = spawn(unimcp, ["dashboard", "--dev"], {
     stdio: "inherit",
     env: { ...process.env, UNIMCP_DEV_KEY: key },
   });

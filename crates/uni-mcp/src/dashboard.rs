@@ -1,4 +1,4 @@
-//! The setup page and its API, on 127.0.0.1 for as long as the page is open.
+//! The dashboard and its API, on 127.0.0.1 for as long as the page is open.
 //! The page itself is public; every API request needs the random key from the
 //! address printed at start, which other websites and users cannot know.
 
@@ -110,7 +110,7 @@ pub async fn run(secrets: Arc<dyn SecretStore>, mode: Mode) -> Result<(), String
         }
         Mode::Page { open_browser } => {
             let url = format!("http://{address}/?key={}", app.key);
-            println!("Setup page: {url}");
+            println!("Dashboard: {url}");
             println!("It stops by itself after you close the page (or press Ctrl+C).");
             if open_browser && open::that(&url).is_err() {
                 println!("Could not open the browser. Open the address above yourself.");
@@ -121,7 +121,7 @@ pub async fn run(secrets: Arc<dyn SecretStore>, mode: Mode) -> Result<(), String
     tokio::select! {
         served = axum::serve(listener, router) => served.map_err(text),
         () = page_closed(&app), if !dev => {
-            println!("The setup page was closed.");
+            println!("The dashboard was closed.");
             Ok(())
         }
     }

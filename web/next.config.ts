@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 import { PHASE_DEVELOPMENT_SERVER } from "next/constants";
 
-// Where `unimcp setup --dev` listens.
+// Where `unimcp dashboard --dev` listens.
 const DEV_BACKEND = "http://127.0.0.1:4517";
 
 export default function config(phase: string): NextConfig {

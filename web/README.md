@@ -1,4 +1,4 @@
-# Setup page
+# Dashboard
 
 The page `unimcp` opens in the browser. This folder is the frontend (Next.js);
 the backend is `unimcp` itself, which the page talks to through `/api/...`.

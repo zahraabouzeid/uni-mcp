@@ -16,8 +16,8 @@ university services: courses, files and timetable.
 
 - `crates/uni-core`: traits, data types, profiles, secret storage
 - `crates/uni-moodle`, `uni-webdav`, `uni-ical`: one connector per service
-- `crates/uni-mcp`: the `unimcp` binary (MCP tools, commands, setup backend)
-- `web`: the setup page, see `web/AGENTS.md` and `web/README.md`
+- `crates/uni-mcp`: the `unimcp` binary (MCP tools, commands, dashboard backend)
+- `web`: the dashboard, see `web/AGENTS.md` and `web/README.md`
 - `profiles`: one file per university
 
 ## Working here

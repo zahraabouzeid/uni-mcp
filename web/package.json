@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "node dev.mjs",
     "dev:page": "next dev -H localhost",
-    "dev:backend": "cargo run --manifest-path ../Cargo.toml -- setup --dev",
+    "dev:backend": "cargo run --manifest-path ../Cargo.toml -- dashboard --dev",
     "build": "next build",
     "lint": "eslint",
     "format": "prettier --write .",

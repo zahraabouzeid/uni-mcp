@@ -53,7 +53,7 @@ with the binaries.
 ## Working on the code
 
 - [`AGENTS.md`](AGENTS.md) has the layout of the repository.
-- [`web/README.md`](web/README.md) explains the setup page and `npm run dev`.
+- [`web/README.md`](web/README.md) explains the dashboard and `npm run dev`.
 
 By contributing you agree that your work is licensed under the
 [AGPL-3.0](LICENSE), like the rest of the project.

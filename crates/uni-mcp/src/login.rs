@@ -1,4 +1,4 @@
-//! Logging in happens in the terminal or on the setup page, never through the
+//! Logging in happens in the terminal or on the dashboard, never through the
 //! chat, so credentials do not pass through the model.
 
 use std::io::{self, Write};

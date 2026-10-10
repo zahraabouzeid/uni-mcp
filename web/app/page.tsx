@@ -5,7 +5,7 @@ import { SERVICE_COLUMNS, ServiceRow } from "@/components/service-row";
 import { SetupView } from "@/components/setup-view";
 import { TOOL_COLUMNS, ToolRow } from "@/components/tool-row";
 import { ActionCell, Button, Cell, ErrorText, Table } from "@/components/ui";
-import { api, errorMessage, type SetupState } from "@/lib/api";
+import { api, errorMessage, type DashboardState } from "@/lib/api";
 
 const VIEWS = ["services", "tools", "setup"] as const;
 type View = (typeof VIEWS)[number];
@@ -15,7 +15,7 @@ const NEUTRAL = "#1f1f23";
 const REFRESH_MS = 10_000;
 
 export default function Console() {
-  const [state, setState] = useState<SetupState | null>(null);
+  const [state, setState] = useState<DashboardState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<View>(() => {
     const hash = typeof window === "undefined" ? "" : window.location.hash.slice(1);
@@ -24,7 +24,7 @@ export default function Console() {
 
   const load = useCallback(
     () =>
-      api<SetupState>("/state").then(
+      api<DashboardState>("/state").then(
         (loaded) => {
           setState(loaded);
           setError(null);
