@@ -1,0 +1,316 @@
+//! The setup page and its API, on 127.0.0.1 for as long as the page is open.
+//! The page itself is public; every API request needs the random key from the
+//! address printed at start, which other websites and users cannot know.
+
+use std::net::Ipv4Addr;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
+
+use axum::extract::{Request, State};
+use axum::http::{StatusCode, Uri, header};
+use axum::middleware::{self, Next};
+use axum::response::{IntoResponse, Response};
+use axum::routing::{get, post};
+use axum::{Json, Router};
+use include_dir::{Dir, include_dir};
+use serde::Deserialize;
+use serde_json::{Value, json};
+use tokio::net::TcpListener;
+use uni_core::Error;
+use uni_core::profile::Profile;
+use uni_core::secrets::SecretStore;
+
+use crate::connectors::{Connectors, WebdavLogin};
+use crate::login::{self, Progress};
+use crate::{config, scheme, server};
+
+static PAGE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../web/out");
+const KEY_HEADER: &str = "x-unimcp-key";
+/// The page asks for its state every few seconds, but browsers slow that down
+/// to once a minute in background tabs.
+const PAGE_GONE_AFTER: Duration = Duration::from_secs(150);
+
+// Shared with `web/next.config.ts` and `web/dev.mjs`.
+const DEV_PORT: u16 = 4517;
+const DEV_PAGE: &str = "http://localhost:3000";
+const DEV_KEY_VARIABLE: &str = "UNIMCP_DEV_KEY";
+
+pub enum Mode {
+    /// The embedded page, on any free port.
+    Page { open_browser: bool },
+    /// Only the API, for the live page of `npm run dev`.
+    Dev,
+}
+
+#[derive(Clone)]
+struct App {
+    secrets: Arc<dyn SecretStore>,
+    key: Arc<str>,
+    started: Instant,
+    /// Seconds after `started` of the latest request; zero until the first.
+    last_seen: Arc<AtomicU64>,
+}
+
+impl App {
+    fn connectors(&self) -> Result<Connectors, ApiError> {
+        let id = config::load()?
+            .profile
+            .ok_or_else(|| ApiError("choose a university first".into()))?;
+        Ok(Connectors::new(
+            Profile::builtin(&id)?,
+            self.secrets.clone(),
+        ))
+    }
+}
+
+struct ApiError(String);
+
+impl From<Error> for ApiError {
+    fn from(e: Error) -> Self {
+        Self(e.to_string())
+    }
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        (StatusCode::BAD_REQUEST, Json(json!({ "error": self.0 }))).into_response()
+    }
+}
+
+type ApiResult = Result<Json<Value>, ApiError>;
+
+pub async fn run(secrets: Arc<dyn SecretStore>, mode: Mode) -> Result<(), String> {
+    let dev = matches!(mode, Mode::Dev);
+    // `npm run dev` restarts the backend on every change and passes the same
+    // key each time, so the open page keeps working.
+    let key = std::env::var(DEV_KEY_VARIABLE)
+        .ok()
+        .filter(|key| dev && !key.is_empty())
+        .map_or_else(random_key, Ok)?;
+    let app = App {
+        secrets,
+        key: key.into(),
+        started: Instant::now(),
+        last_seen: Arc::new(AtomicU64::new(0)),
+    };
+
+    let port = if dev { DEV_PORT } else { 0 };
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, port))
+        .await
+        .map_err(|e| format!("cannot listen on port {port}: {e}"))?;
+    let address = listener.local_addr().map_err(text)?;
+
+    let api = Router::new()
+        .route("/state", get(state))
+        .route("/university", post(choose_university))
+        .route("/login/moodle", post(start_moodle).get(moodle_progress))
+        .route("/login/webdav", post(login_webdav))
+        .route("/login/calendar", post(login_calendar))
+        .route("/logout", post(logout))
+        .route("/tools/try", post(try_tool))
+        .layer(middleware::from_fn_with_state(app.clone(), require_key));
+    let router = Router::new()
+        .nest("/api", api)
+        .fallback(page)
+        .with_state(app.clone());
+
+    match mode {
+        Mode::Dev => {
+            println!("Backend for the live page is running (Ctrl+C to stop).");
+            println!("Page: {DEV_PAGE}/?key={}", app.key);
+        }
+        Mode::Page { open_browser } => {
+            let url = format!("http://{address}/?key={}", app.key);
+            println!("Setup page: {url}");
+            println!("It stops by itself after you close the page (or press Ctrl+C).");
+            if open_browser && open::that(&url).is_err() {
+                println!("Could not open the browser. Open the address above yourself.");
+            }
+        }
+    }
+
+    tokio::select! {
+        served = axum::serve(listener, router) => served.map_err(text),
+        () = page_closed(&app), if !dev => {
+            println!("The setup page was closed.");
+            Ok(())
+        }
+    }
+}
+
+async fn require_key(State(app): State<App>, request: Request, next: Next) -> Response {
+    let sent = request
+        .headers()
+        .get(KEY_HEADER)
+        .and_then(|value| value.to_str().ok());
+    if sent != Some(&*app.key) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    // Plus one, because zero means "never".
+    app.last_seen
+        .store(app.started.elapsed().as_secs() + 1, Ordering::Relaxed);
+    next.run(request).await
+}
+
+async fn page_closed(app: &App) {
+    loop {
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        let last_seen = app.last_seen.load(Ordering::Relaxed);
+        let now = app.started.elapsed().as_secs() + 1;
+        if last_seen != 0 && now - last_seen > PAGE_GONE_AFTER.as_secs() {
+            return;
+        }
+    }
+}
+
+async fn page(uri: Uri) -> Response {
+    let path = match uri.path().trim_start_matches('/') {
+        "" => "index.html",
+        path => path,
+    };
+    match PAGE.get_file(path) {
+        Some(file) => {
+            let mime = mime_guess::from_path(path).first_or_octet_stream();
+            ([(header::CONTENT_TYPE, mime.to_string())], file.contents()).into_response()
+        }
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+async fn state(State(app): State<App>) -> ApiResult {
+    let selected = config::load()?.profile;
+    let services = match &selected {
+        Some(_) => app.connectors()?.services(),
+        None => Vec::new(),
+    };
+
+    let universities: Vec<Value> = Profile::builtin_all()?
+        .into_iter()
+        .map(|p| json!({ "id": p.id, "name": p.name, "color": p.color }))
+        .collect();
+    let tools: Vec<Value> = server::tools()
+        .into_iter()
+        .map(|tool| {
+            let service = services.iter().find(|s| Some(s.kind) == tool.service);
+            let available =
+                tool.service.is_none() || service.is_some_and(|s| matches!(s.logged_in, Ok(true)));
+            json!({
+                "name": tool.name,
+                "description": tool.description,
+                "params": tool.params,
+                "service": service.map(|s| &s.name),
+                "available": available,
+            })
+        })
+        .collect();
+    let services: Vec<Value> = services
+        .iter()
+        .map(|s| {
+            json!({
+                "id": s.id,
+                "name": s.name,
+                "kind": s.kind,
+                "logged_in": matches!(s.logged_in, Ok(true)),
+                "error": s.logged_in.as_ref().err().map(ToString::to_string),
+            })
+        })
+        .collect();
+
+    Ok(Json(json!({
+        "universities": universities,
+        "selected": selected,
+        "services": services,
+        "tools": tools,
+        "executable": std::env::current_exe().ok().map(|exe| exe.display().to_string()),
+        "version": env!("CARGO_PKG_VERSION"),
+        "browser_sign_in": scheme::SUPPORTED,
+    })))
+}
+
+#[derive(Deserialize)]
+struct UniversityChoice {
+    id: String,
+}
+
+async fn choose_university(Json(choice): Json<UniversityChoice>) -> ApiResult {
+    let profile = Profile::builtin(&choice.id)?;
+    config::save(&config::Config {
+        profile: Some(profile.id),
+    })?;
+    Ok(done())
+}
+
+async fn start_moodle(State(app): State<App>) -> ApiResult {
+    let url = login::begin_moodle(&app.connectors()?)?;
+    let opened = open::that(&url).is_ok();
+    Ok(Json(json!({ "url": url, "opened": opened })))
+}
+
+async fn moodle_progress(State(app): State<App>) -> ApiResult {
+    let (state, message) = match login::moodle_progress(&app.connectors()?)? {
+        Progress::Waiting => ("waiting", None),
+        Progress::Done => ("done", None),
+        Progress::Failed(reason) => ("failed", Some(reason)),
+    };
+    Ok(Json(json!({ "state": state, "message": message })))
+}
+
+async fn login_webdav(State(app): State<App>, Json(login): Json<WebdavLogin>) -> ApiResult {
+    let login = WebdavLogin {
+        user: login.user.trim().to_owned(),
+        password: login.password.trim().to_owned(),
+    };
+    login::store_webdav(&app.connectors()?, login).await?;
+    Ok(done())
+}
+
+#[derive(Deserialize)]
+struct CalendarLink {
+    link: String,
+}
+
+async fn login_calendar(State(app): State<App>, Json(body): Json<CalendarLink>) -> ApiResult {
+    login::store_calendar(&app.connectors()?, &body.link).await?;
+    Ok(done())
+}
+
+#[derive(Deserialize)]
+struct ServiceChoice {
+    service: String,
+}
+
+async fn logout(State(app): State<App>, Json(choice): Json<ServiceChoice>) -> ApiResult {
+    login::logout(&app.connectors()?, &choice.service)?;
+    Ok(done())
+}
+
+#[derive(Deserialize)]
+struct ToolCall {
+    name: String,
+    arguments: serde_json::Map<String, Value>,
+}
+
+/// A failing tool is a result to show, not an API error.
+async fn try_tool(State(app): State<App>, Json(call): Json<ToolCall>) -> ApiResult {
+    let result = server::try_tool(app.connectors()?, &call.name, call.arguments.into()).await;
+    let (ok, output) = match result {
+        Ok(output) => (true, output),
+        Err(message) => (false, message),
+    };
+    Ok(Json(json!({ "ok": ok, "output": output })))
+}
+
+fn done() -> Json<Value> {
+    Json(json!({ "ok": true }))
+}
+
+fn random_key() -> Result<String, String> {
+    let mut bytes = [0u8; 16];
+    getrandom::fill(&mut bytes).map_err(text)?;
+    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+fn text(e: impl std::fmt::Display) -> String {
+    e.to_string()
+}
