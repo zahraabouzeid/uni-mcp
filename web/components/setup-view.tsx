@@ -1,0 +1,107 @@
+"use client";
+
+import { useState } from "react";
+import { Button, CodeBlock } from "./ui";
+
+type Step = {
+  title: string;
+  hint?: string;
+  snippet: (executable: string) => string;
+};
+
+const APPS: { name: string; steps: Step[] }[] = [
+  {
+    name: "Claude",
+    steps: [
+      {
+        title: "Claude app",
+        hint: "Settings › Developer › Edit Config, then restart.",
+        snippet: (executable) =>
+          JSON.stringify(
+            { mcpServers: { uni: { command: executable, args: ["serve"] } } },
+            null,
+            2,
+          ),
+      },
+      {
+        title: "Claude Code",
+        snippet: (executable) => `claude mcp add uni -- "${executable}" serve`,
+      },
+    ],
+  },
+  {
+    name: "Codex",
+    steps: [
+      {
+        title: "Terminal",
+        snippet: (executable) => `codex mcp add uni -- "${executable}" serve`,
+      },
+    ],
+  },
+  {
+    name: "Other",
+    steps: [
+      {
+        title: "Command",
+        snippet: (executable) => `"${executable}" serve`,
+      },
+    ],
+  },
+];
+
+export function SetupView({ executable }: { executable: string }) {
+  const [selected, setSelected] = useState(0);
+  const app = APPS[selected];
+
+  return (
+    <>
+      <div role="tablist" className="mb-6 flex flex-wrap gap-x-5 gap-y-2 border-b border-line">
+        {APPS.map((a, index) => (
+          <button
+            key={a.name}
+            role="tab"
+            type="button"
+            aria-selected={index === selected}
+            onClick={() => setSelected(index)}
+            className={`-mb-px whitespace-nowrap border-b-2 pb-2 font-medium ${
+              index === selected
+                ? "border-ink text-ink"
+                : "border-transparent text-muted hover:text-ink"
+            }`}
+          >
+            {a.name}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid gap-8">
+        {app.steps.map((step) => (
+          <Snippet key={`${app.name}:${step.title}`} step={step} code={step.snippet(executable)} />
+        ))}
+      </div>
+    </>
+  );
+}
+
+function Snippet({ step, code }: { step: Step; code: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    await navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between gap-4">
+        <p>
+          <span className="font-medium">{step.title}</span>
+          {step.hint && <span className="ml-3 text-muted">{step.hint}</span>}
+        </p>
+        <Button onClick={copy}>{copied ? "Copied" : "Copy"}</Button>
+      </div>
+      <CodeBlock code={code} className="whitespace-pre-wrap break-all bg-panel" />
+    </div>
+  );
+}
