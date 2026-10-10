@@ -14,7 +14,7 @@ use crate::{Error, Result, archive};
 
 pub const MAX_FILE_BYTES: usize = 50 * 1024 * 1024;
 pub const MAX_TEXT_BYTES: usize = 200 * 1024;
-/// Each page picture costs the model about as much as a page of text.
+/// Each page picture costs the model several times a page of text.
 pub const MAX_PAGE_IMAGES: usize = 5;
 const PAGE_IMAGE_SIDE: f32 = 1400.0;
 const ZIP: &[u8] = b"PK\x03\x04";
@@ -197,44 +197,29 @@ fn numbered(unit: &str, all: &[String], wanted: RangeInclusive<usize>) -> Docume
     }
 }
 
+/// Pictures only: the text of a page with formulas or figures on it would
+/// contradict what the picture shows.
 fn pdf_pages(bytes: &[u8], pages: Option<&str>) -> Result<Document> {
-    let rendered = panic::catch_unwind(AssertUnwindSafe(|| render(bytes, pages)))
-        .map_err(|_| unreadable("it is damaged or uses an unsupported feature"))??;
-    // A scan has no text, which is exactly when the pictures are needed.
-    let texts = page_texts(bytes).unwrap_or_default();
-
-    let first = rendered.images.first().and_then(|image| image.page);
-    let last = rendered.images.last().and_then(|image| image.page);
-    let (Some(first), Some(last)) = (first, last) else {
-        return Err(unreadable("it has no pages"));
-    };
-    let text = (first..=last)
-        .filter_map(|number| Some(marked("page", number, texts.get(number - 1)?)))
-        .collect::<String>();
-
-    Ok(Document {
-        text: fitting(&text).to_owned(),
-        page_count: Some(rendered.page_count),
-        pages: Some(format!("{first}-{last}")),
-        truncated: last < rendered.wanted_last,
-        images: rendered.images,
-    })
+    panic::catch_unwind(AssertUnwindSafe(|| render(bytes, pages)))
+        .map_err(|_| unreadable("it is damaged or uses an unsupported feature"))?
 }
 
-struct Rendered {
-    images: Vec<Image>,
-    page_count: usize,
-    wanted_last: usize,
-}
-
-fn render(bytes: &[u8], pages: Option<&str>) -> Result<Rendered> {
+fn render(bytes: &[u8], pages: Option<&str>) -> Result<Document> {
     let pdf = Pdf::new(bytes.to_vec()).map_err(|_| unreadable("it is not a valid PDF"))?;
     let all = pdf.pages();
     let wanted = wanted(pages, all.len())?;
+    if wanted.clone().count() > MAX_PAGE_IMAGES {
+        return Err(Error::InvalidInput(format!(
+            "the file has {} pages and view `pages` shows at most {MAX_PAGE_IMAGES} at a time; ask for a range such as {}-{}",
+            all.len(),
+            wanted.start(),
+            wanted.start() + MAX_PAGE_IMAGES - 1
+        )));
+    }
 
     let cache = RenderCache::new();
     let mut images = Vec::new();
-    for number in wanted.clone().take(MAX_PAGE_IMAGES) {
+    for number in wanted.clone() {
         let page = all
             .get(number - 1)
             .ok_or_else(|| unreadable("a page is missing"))?;
@@ -257,10 +242,12 @@ fn render(bytes: &[u8], pages: Option<&str>) -> Result<Rendered> {
             page: Some(number),
         });
     }
-    Ok(Rendered {
+    Ok(Document {
+        text: String::new(),
+        page_count: Some(all.len()),
+        pages: Some(format!("{}-{}", wanted.start(), wanted.end())),
+        truncated: false,
         images,
-        page_count: all.len(),
-        wanted_last: *wanted.end(),
     })
 }
 
@@ -441,13 +428,13 @@ mod tests {
     }
 
     #[test]
-    fn pages_come_back_as_pictures_with_their_text() {
+    fn pages_come_back_as_pictures_without_text() {
         let bytes = pdf(&["Alpha", "Beta", "Gamma"]);
         let document = pictures(&bytes, Some("2-3")).expect("pages");
         assert_eq!(document.page_count, Some(3));
         assert_eq!(document.pages.as_deref(), Some("2-3"));
         assert!(!document.truncated);
-        assert!(document.text.contains("Beta") && document.text.contains("Gamma"));
+        assert_eq!(document.text, "");
 
         let numbers: Vec<_> = document.images.iter().map(|image| image.page).collect();
         assert_eq!(numbers, [Some(2), Some(3)]);
@@ -464,12 +451,18 @@ mod tests {
     }
 
     #[test]
-    fn only_a_few_pictures_are_sent_at_once() {
-        let lines = vec!["Slide"; MAX_PAGE_IMAGES + 2];
-        let document = pictures(&pdf(&lines), None).expect("pages");
-        assert_eq!(document.images.len(), MAX_PAGE_IMAGES);
-        assert_eq!(document.pages, Some(format!("1-{MAX_PAGE_IMAGES}")));
-        assert!(document.truncated);
+    fn more_pictures_than_allowed_are_refused_with_a_range_to_ask_for() {
+        let bytes = pdf(&["Slide"; MAX_PAGE_IMAGES + 2]);
+        let error = pictures(&bytes, None).expect_err("too many");
+        assert!(error.to_string().contains("7 pages"), "{error}");
+        assert!(error.to_string().contains("1-5"), "{error}");
+
+        let later = pictures(&bytes, Some("2-7")).expect_err("too many");
+        assert!(later.to_string().contains("2-6"), "{later}");
+
+        let allowed = pictures(&bytes, Some("3-7")).expect("five pages");
+        assert_eq!(allowed.images.len(), MAX_PAGE_IMAGES);
+        assert!(!allowed.truncated);
     }
 
     #[test]
@@ -545,8 +538,8 @@ mod tests {
         };
         let document = read(&zip, request).expect("pdf in zip");
         assert_eq!(document.page_count, Some(2));
-        assert!(document.text.contains("Beta"));
         assert_eq!(document.images.len(), 1);
+        assert_eq!(document.images[0].page, Some(2));
     }
 
     #[test]

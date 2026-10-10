@@ -100,8 +100,9 @@ impl PartArgs {
 }
 
 /// `text` (the default) gives the text of the file. `pages` gives pictures
-/// of PDF pages together with their text, a few pages per call: use it for
-/// diagrams, formulas, tables and scans, where the text alone is not enough.
+/// of PDF pages instead, at most 5 per call, so set `pages` to a range like
+/// `1-5`: use it for diagrams, formulas, tables and scans, where the text is
+/// not enough.
 #[derive(Clone, Copy, Default, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 enum ViewArg {
