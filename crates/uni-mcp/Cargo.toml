@@ -32,6 +32,9 @@ uni-ical.workspace = true
 uni-moodle.workspace = true
 uni-webdav.workspace = true
 
+[build-dependencies]
+winresource = "0.1"
+
 [dev-dependencies]
 md5.workspace = true
 tower = { version = "0.5", features = ["util"] }
