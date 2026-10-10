@@ -228,6 +228,7 @@ async fn state(State(app): State<App>) -> ApiResult {
         "tools": tools,
         "executable": std::env::current_exe().ok().map(|exe| exe.display().to_string()),
         "version": env!("CARGO_PKG_VERSION"),
+        "repository": env!("CARGO_PKG_REPOSITORY"),
         "browser_sign_in": scheme::SUPPORTED,
     })))
 }
