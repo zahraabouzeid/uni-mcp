@@ -103,7 +103,7 @@ export default function Console() {
 
         <div className="mt-auto flex items-end justify-between gap-2 px-4 py-4 text-xs text-white/60">
           <div>
-            <p>Version {state.version}</p>
+            <p>v{state.version}</p>
             <p className="flex items-center gap-1">
               Made with
               <svg aria-label="love" role="img" viewBox="0 0 16 16" className="size-3 fill-white">

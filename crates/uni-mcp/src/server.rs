@@ -49,6 +49,8 @@ struct AssignmentArgs {
 struct CourseFileArgs {
     /// `file_ref` of an entry from `list_course_files`.
     file_ref: String,
+    /// For a PDF: the pages to read, e.g. `3` or `1-10`. Omit for all pages.
+    pages: Option<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -66,6 +68,14 @@ struct PathArgs {
     /// Path inside the file store, e.g. `Uni/Analysis`. Empty or omitted means the top folder.
     #[serde(default)]
     path: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+struct FileArgs {
+    /// Path of the file inside the file store, e.g. `Uni/Analysis/notes.pdf`.
+    path: String,
+    /// For a PDF: the pages to read, e.g. `3` or `1-10`. Omit for all pages.
+    pages: Option<String>,
 }
 
 #[tool_router]
@@ -119,12 +129,15 @@ impl UniServer {
     }
 
     #[tool(
-        description = "Read a plain-text course file by its `file_ref` from `list_course_files`.",
+        description = "Read a course file (PDF or plain text) by its `file_ref` from `list_course_files`. A long PDF comes back cut off with `truncated: true`; ask for the following `pages` to read on.",
         annotations(read_only_hint = true)
     )]
     async fn read_course_file(&self, Parameters(args): Parameters<CourseFileArgs>) -> ToolResult {
         let courses = self.connectors.courses().map_err(text)?;
-        render("course_file", courses.read_file(&args.file_ref).await)
+        let file = courses
+            .read_file(&args.file_ref, args.pages.as_deref())
+            .await;
+        render("course_file", file)
     }
 
     #[tool(
@@ -153,12 +166,13 @@ impl UniServer {
     }
 
     #[tool(
-        description = "Read a plain-text file from the student's cloud storage.",
+        description = "Read a file (PDF or plain text) from the student's cloud storage. A long PDF comes back cut off with `truncated: true`; ask for the following `pages` to read on.",
         annotations(read_only_hint = true)
     )]
-    async fn read_file(&self, Parameters(args): Parameters<PathArgs>) -> ToolResult {
+    async fn read_file(&self, Parameters(args): Parameters<FileArgs>) -> ToolResult {
         let files = self.connectors.files().map_err(text)?;
-        render("file", files.read_text(&args.path).await)
+        let file = files.read(&args.path, args.pages.as_deref()).await;
+        render("file", file)
     }
 }
 

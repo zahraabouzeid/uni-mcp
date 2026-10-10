@@ -2,6 +2,7 @@
 //! profiles and secret storage. Knows nothing about any one service or MCP.
 
 pub mod capability;
+pub mod document;
 pub mod error;
 pub mod model;
 pub mod profile;

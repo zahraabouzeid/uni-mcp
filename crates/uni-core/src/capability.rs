@@ -1,10 +1,7 @@
 use async_trait::async_trait;
 
 use crate::Result;
-use crate::model::{Assignment, Course, CourseFile, Event, FileEntry};
-
-/// Largest file a connector hands to the model as text.
-pub const MAX_TEXT_BYTES: usize = 512 * 1024;
+use crate::model::{Assignment, Course, CourseFile, Document, Event, FileEntry};
 
 #[async_trait]
 pub trait Courses: Send + Sync {
@@ -12,7 +9,8 @@ pub trait Courses: Send + Sync {
     async fn list_course_files(&self, course_id: &str) -> Result<Vec<CourseFile>>;
     /// `None` lists the assignments of all enrolled courses.
     async fn list_assignments(&self, course_id: Option<&str>) -> Result<Vec<Assignment>>;
-    async fn read_file(&self, file_ref: &str) -> Result<String>;
+    /// `pages` selects pages of a PDF, see [`crate::document::read`].
+    async fn read_file(&self, file_ref: &str, pages: Option<&str>) -> Result<Document>;
 }
 
 #[async_trait]
@@ -31,5 +29,6 @@ pub trait Calendar: Send + Sync {
 #[async_trait]
 pub trait Files: Send + Sync {
     async fn list(&self, path: &str) -> Result<Vec<FileEntry>>;
-    async fn read_text(&self, path: &str) -> Result<String>;
+    /// `pages` selects pages of a PDF, see [`crate::document::read`].
+    async fn read(&self, path: &str, pages: Option<&str>) -> Result<Document>;
 }

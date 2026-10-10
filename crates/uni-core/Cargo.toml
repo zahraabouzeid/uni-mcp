@@ -9,6 +9,7 @@ license.workspace = true
 async-trait.workspace = true
 include_dir.workspace = true
 keyring = "4"
+pdf-extract = "0.12"
 serde.workspace = true
 thiserror.workspace = true
 toml.workspace = true

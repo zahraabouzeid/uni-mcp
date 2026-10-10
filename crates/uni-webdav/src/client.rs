@@ -1,8 +1,7 @@
 use async_trait::async_trait;
 use reqwest::Method;
-use uni_core::capability::MAX_TEXT_BYTES;
-use uni_core::model::FileEntry;
-use uni_core::{Error, Files, Result};
+use uni_core::model::{Document, FileEntry};
+use uni_core::{Error, Files, Result, document};
 use url::Url;
 
 use crate::multistatus;
@@ -118,24 +117,12 @@ impl Files for WebdavClient {
         })
     }
 
-    async fn read_text(&self, path: &str) -> Result<String> {
+    async fn read(&self, path: &str, pages: Option<&str>) -> Result<Document> {
         let (url, _) = self.url_for(path)?;
-        let bytes = self
-            .send(Method::GET, url, None)
-            .await?
-            .bytes()
-            .await
-            .map_err(|e| self.network(e))?;
-        if bytes.len() > MAX_TEXT_BYTES {
-            return Err(Error::InvalidInput(format!(
-                "file is larger than {MAX_TEXT_BYTES} bytes"
-            )));
-        }
-        String::from_utf8(bytes.to_vec()).map_err(|_| {
-            Error::InvalidInput(
-                "file is not plain text (PDF extraction is not implemented yet)".into(),
-            )
-        })
+        let response = self.send(Method::GET, url, None).await?;
+        document::check_size(response.content_length().unwrap_or(0))?;
+        let bytes = response.bytes().await.map_err(|e| self.network(e))?;
+        document::read(&bytes, pages)
     }
 }
 

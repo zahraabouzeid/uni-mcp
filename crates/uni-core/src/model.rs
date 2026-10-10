@@ -28,6 +28,18 @@ pub struct CourseFile {
     pub file_ref: String,
 }
 
+/// The readable content of a file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Document {
+    pub text: String,
+    /// Only for files that have pages, such as PDFs.
+    pub page_count: Option<usize>,
+    /// The pages that `text` covers, e.g. `1-12`.
+    pub pages: Option<String>,
+    /// The text was cut off; ask for the following pages to read on.
+    pub truncated: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Event {
     pub title: String,
