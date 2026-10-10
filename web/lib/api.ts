@@ -27,6 +27,7 @@ export type DashboardState = {
   tools: Tool[];
   executable: string | null;
   version: string;
+  repository: string;
   browser_sign_in: boolean;
 };
 
