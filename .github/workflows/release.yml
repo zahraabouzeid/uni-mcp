@@ -1,17 +1,48 @@
 name: Release
 
-# Pushing a tag like v0.1.0 builds unimcp for every system and publishes a
-# GitHub release with the binaries attached.
+# Publishes the version in Cargo.toml once: when a new version number reaches
+# main, or when the workflow is started by hand from the Actions tab.
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
+  version:
+    name: Version
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      unreleased: ${{ steps.version.outputs.unreleased }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 |
+            jq -r '.packages[] | select(.name == "uni-mcp") | .version')
+          tag="v$version"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if gh release view "$tag" > /dev/null 2>&1; then
+            echo "unreleased=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::$tag is already released. Change the version in Cargo.toml to release again."
+          else
+            echo "unreleased=true" >> "$GITHUB_OUTPUT"
+          fi
+
   web:
     name: Dashboard
+    needs: version
+    if: needs.version.outputs.unreleased == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -64,7 +95,7 @@ jobs:
 
   publish:
     name: Publish
-    needs: build
+    needs: [version, build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -72,6 +103,11 @@ jobs:
           pattern: unimcp-*
           merge-multiple: true
           path: binaries
-      - run: gh release create "$GITHUB_REF_NAME" binaries/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+      # Creates the tag on the commit that was built.
+      - run: >
+          gh release create "$TAG" binaries/*
+          --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA"
+          --title "$TAG" --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}

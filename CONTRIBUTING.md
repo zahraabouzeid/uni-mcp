@@ -41,14 +41,12 @@ pull request, and say in it which ones you tried.
 
 ## Releasing
 
-Set the new version in the root `Cargo.toml`, merge that, then tag `main`:
+Change the version in the root `Cargo.toml` in a pull request. When it is
+merged, the new version is built for Windows, Linux and macOS, tagged, and
+published as a release with the binaries.
 
-```sh
-git tag v0.2.0 && git push origin v0.2.0
-```
-
-The tag starts a build for Windows, Linux and macOS and publishes a release
-with the binaries.
+The Release workflow can also be started by hand from the Actions tab. It
+publishes the version in `Cargo.toml` if that one is not released yet.
 
 ## Working on the code
 
