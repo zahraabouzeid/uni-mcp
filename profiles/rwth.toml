@@ -1,0 +1,16 @@
+id = "rwth"
+name = "RWTH Aachen University"
+color = "#00549f"
+
+[moodle]
+base_url = "https://moodle.rwth-aachen.de"
+
+[webdav]
+id = "sciebo"
+name = "Sciebo"
+files_url = "https://rwth-aachen.sciebo.de/remote.php/dav/files/{user}/"
+
+# RWTHonline: the iCal link from publishing the personal calendar.
+[calendar]
+host = "online.rwth-aachen.de"
+timezone = "Europe/Berlin"
