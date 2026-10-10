@@ -1,0 +1,16 @@
+[package]
+name = "uni-ical"
+description = "Calendar connector for uni-mcp (personal iCalendar feeds, e.g. CAMPUSonline), read-only"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+jiff = "0.2"
+reqwest.workspace = true
+uni-core.workspace = true
+url.workspace = true
+
+[lints]
+workspace = true
