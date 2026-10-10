@@ -7,11 +7,15 @@ license.workspace = true
 
 [dependencies]
 async-trait.workspace = true
+hayro = "0.8"
 include_dir.workspace = true
 keyring = "4"
+pdf-extract = "0.12"
+roxmltree = "0.20"
 serde.workspace = true
 thiserror.workspace = true
 toml.workspace = true
+zip = { version = "9", default-features = false, features = ["deflate"] }
 
 [lints]
 workspace = true

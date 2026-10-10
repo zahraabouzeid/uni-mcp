@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio"] }
+base64.workspace = true
 clap = { version = "4", features = ["derive", "env"] }
 dirs = "6"
 getrandom = "0.4"
@@ -32,7 +33,6 @@ uni-moodle.workspace = true
 uni-webdav.workspace = true
 
 [dev-dependencies]
-base64.workspace = true
 md5.workspace = true
 tower = { version = "0.5", features = ["util"] }
 

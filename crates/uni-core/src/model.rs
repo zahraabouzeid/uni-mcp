@@ -28,6 +28,29 @@ pub struct CourseFile {
     pub file_ref: String,
 }
 
+/// The content of a file: its text, and pictures where they were asked for.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Document {
+    pub text: String,
+    /// Only for files that have pages, such as PDFs.
+    pub page_count: Option<usize>,
+    /// The pages this answer covers, e.g. `1-12`.
+    pub pages: Option<String>,
+    /// There is more; ask for the following pages to go on.
+    pub truncated: bool,
+    /// Handed to the model as pictures, not as part of the text.
+    #[serde(skip)]
+    pub images: Vec<Image>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Image {
+    pub mime_type: &'static str,
+    pub data: Vec<u8>,
+    /// The PDF page this is a picture of.
+    pub page: Option<usize>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Event {
     pub title: String,

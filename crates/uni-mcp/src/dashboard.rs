@@ -13,6 +13,8 @@ use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 use include_dir::{Dir, include_dir};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -299,11 +301,20 @@ struct ToolCall {
 /// A failing tool is a result to show, not an API error.
 async fn try_tool(State(app): State<App>, Json(call): Json<ToolCall>) -> ApiResult {
     let result = server::try_tool(app.connectors()?, &call.name, call.arguments.into()).await;
-    let (ok, output) = match result {
-        Ok(output) => (true, output),
-        Err(message) => (false, message),
-    };
-    Ok(Json(json!({ "ok": ok, "output": output })))
+    Ok(Json(match result {
+        Ok(output) => {
+            let images: Vec<Value> = output
+                .images
+                .into_iter()
+                .map(|image| {
+                    let data = STANDARD.encode(image.data);
+                    json!({ "page": image.page, "url": format!("data:{};base64,{data}", image.mime_type) })
+                })
+                .collect();
+            json!({ "ok": true, "output": output.text, "images": images })
+        }
+        Err(message) => json!({ "ok": false, "output": message, "images": [] }),
+    }))
 }
 
 fn done() -> Json<Value> {

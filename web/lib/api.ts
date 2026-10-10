@@ -8,7 +8,13 @@ export type Service = {
   error: string | null;
 };
 
-export type ToolParam = { name: string; description: string; required: boolean };
+export type ToolParam = {
+  name: string;
+  description: string;
+  required: boolean;
+  options: string[];
+  default: string | null;
+};
 
 export type Tool = {
   name: string;
@@ -18,7 +24,11 @@ export type Tool = {
   available: boolean;
 };
 
-export type ToolRun = { ok: boolean; output: string };
+export type ToolRun = {
+  ok: boolean;
+  output: string;
+  images: { page: number | null; url: string }[];
+};
 
 export type DashboardState = {
   universities: University[];
