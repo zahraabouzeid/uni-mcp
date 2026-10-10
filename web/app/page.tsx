@@ -68,6 +68,11 @@ export default function Console() {
         style={{ backgroundColor: university?.color ?? NEUTRAL }}
       >
         <p className="flex h-14 shrink-0 items-center bg-black/25 px-4 text-lg tracking-tight">
+          {/* The icon as a mask, so it takes the text colour. */}
+          <span
+            aria-hidden
+            className="mr-2 size-7 bg-current [mask:url(/icon.svg)_center/contain_no-repeat]"
+          />
           <span className="font-light">uni</span>
           <span className="font-bold">MCP</span>
         </p>
