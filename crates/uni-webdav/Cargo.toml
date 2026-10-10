@@ -1,0 +1,17 @@
+[package]
+name = "uni-webdav"
+description = "WebDAV connector for uni-mcp (Sciebo, Nextcloud, ownCloud), read-only"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+percent-encoding = "2"
+reqwest.workspace = true
+roxmltree = "0.20"
+uni-core.workspace = true
+url.workspace = true
+
+[lints]
+workspace = true
