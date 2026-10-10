@@ -2,7 +2,7 @@
 
 import { type FormEvent, useState } from "react";
 import { api, errorMessage, type Tool, type ToolRun } from "@/lib/api";
-import { ActionCell, Button, Cell, CodeBlock, DetailRow, ErrorText, Field } from "./ui";
+import { ActionCell, Button, Cell, Choice, CodeBlock, DetailRow, ErrorText, Field } from "./ui";
 
 export const TOOL_COLUMNS = ["Tool", "Service", "Description", ""];
 
@@ -16,7 +16,7 @@ export function ToolRow({ tool }: { tool: Tool }) {
     try {
       setResult(await api<ToolRun>("/tools/try", { name: tool.name, arguments: args }));
     } catch (e) {
-      setResult({ ok: false, output: errorMessage(e) });
+      setResult({ ok: false, output: errorMessage(e), images: [] });
     }
     setRunning(false);
   }
@@ -58,15 +58,19 @@ export function ToolRow({ tool }: { tool: Tool }) {
       {open && tool.available && (
         <DetailRow columns={TOOL_COLUMNS.length}>
           <form onSubmit={submit} className="flex flex-wrap items-end gap-3">
-            {tool.params.map((param) => (
-              <Field
-                key={param.name}
-                name={param.name}
-                label={param.required ? param.name : `${param.name} (optional)`}
-                title={param.description}
-                required={param.required}
-              />
-            ))}
+            {tool.params.map((param) => {
+              const field = {
+                name: param.name,
+                label: param.required ? param.name : `${param.name} (optional)`,
+                title: param.description,
+                required: param.required,
+              };
+              return param.options.length > 0 ? (
+                <Choice key={param.name} options={param.options} {...field} />
+              ) : (
+                <Field key={param.name} {...field} />
+              );
+            })}
             <Button type="submit" variant="primary" disabled={running}>
               {running ? "Running" : "Run"}
             </Button>
@@ -74,7 +78,19 @@ export function ToolRow({ tool }: { tool: Tool }) {
           {result && (
             <div className="mt-4">
               {result.ok ? (
-                <CodeBlock code={result.output} className="max-h-96" />
+                <>
+                  <CodeBlock code={result.output} className="max-h-96" />
+                  {result.images.map((image, index) => (
+                    // A data: URL from the backend; next/image has nothing to optimise.
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      key={index}
+                      src={image.url}
+                      alt={image.page ? `Page ${image.page}` : "Picture"}
+                      className="mt-3 max-w-full rounded-md border border-line"
+                    />
+                  ))}
+                </>
               ) : (
                 <ErrorText>{result.output}</ErrorText>
               )}

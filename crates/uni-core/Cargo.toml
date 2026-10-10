@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 async-trait.workspace = true
+hayro = "0.8"
 include_dir.workspace = true
 keyring = "4"
 pdf-extract = "0.12"

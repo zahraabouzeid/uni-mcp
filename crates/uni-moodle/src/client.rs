@@ -1,7 +1,8 @@
 use async_trait::async_trait;
 use serde::de::DeserializeOwned;
+use uni_core::document::{self, View};
 use uni_core::model::{Assignment, Course, CourseFile, Document};
-use uni_core::{Courses, Error, Result, document};
+use uni_core::{Courses, Error, Result};
 use url::Url;
 
 use crate::{SERVICE, wire};
@@ -147,7 +148,7 @@ impl Courses for MoodleClient {
         Ok(assignments(result))
     }
 
-    async fn read_file(&self, file_ref: &str, pages: Option<&str>) -> Result<Document> {
+    async fn read_file(&self, file_ref: &str, pages: Option<&str>, view: View) -> Result<Document> {
         let mut url = self.checked_file_url(file_ref)?;
         url.query_pairs_mut().append_pair("token", &self.token);
 
@@ -161,7 +162,7 @@ impl Courses for MoodleClient {
             .map_err(network)?;
         document::check_size(response.content_length().unwrap_or(0))?;
         let bytes = response.bytes().await.map_err(network)?;
-        document::read(&bytes, pages)
+        document::read(&bytes, pages, view)
     }
 }
 

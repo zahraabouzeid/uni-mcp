@@ -1,4 +1,9 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from "react";
+import type {
+  ButtonHTMLAttributes,
+  InputHTMLAttributes,
+  ReactNode,
+  SelectHTMLAttributes,
+} from "react";
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "secondary";
@@ -81,6 +86,31 @@ export function Field({
         className="h-8 rounded-md border border-line bg-canvas px-2.5 text-ink outline-none focus:border-ink"
         {...input}
       />
+    </label>
+  );
+}
+
+export function Choice({
+  label,
+  options,
+  required,
+  ...select
+}: { label: string; options: string[] } & SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <label className="grid w-60 gap-1">
+      <span className="text-xs font-medium text-muted">{label}</span>
+      <select
+        required={required}
+        className="h-8 rounded-md border border-line bg-canvas px-2 text-ink outline-none focus:border-ink"
+        {...select}
+      >
+        {!required && <option value="" />}
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
     </label>
   );
 }

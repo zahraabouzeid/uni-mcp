@@ -1,7 +1,8 @@
 use async_trait::async_trait;
 use reqwest::Method;
+use uni_core::document::{self, View};
 use uni_core::model::{Document, FileEntry};
-use uni_core::{Error, Files, Result, document};
+use uni_core::{Error, Files, Result};
 use url::Url;
 
 use crate::multistatus;
@@ -117,12 +118,12 @@ impl Files for WebdavClient {
         })
     }
 
-    async fn read(&self, path: &str, pages: Option<&str>) -> Result<Document> {
+    async fn read(&self, path: &str, pages: Option<&str>, view: View) -> Result<Document> {
         let (url, _) = self.url_for(path)?;
         let response = self.send(Method::GET, url, None).await?;
         document::check_size(response.content_length().unwrap_or(0))?;
         let bytes = response.bytes().await.map_err(|e| self.network(e))?;
-        document::read(&bytes, pages)
+        document::read(&bytes, pages, view)
     }
 }
 

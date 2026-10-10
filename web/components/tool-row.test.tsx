@@ -39,7 +39,7 @@ test("a tool whose service is not connected cannot be tried", () => {
 });
 
 test("a tool without parameters runs as soon as it is opened", async () => {
-  vi.mocked(api).mockResolvedValue({ ok: true, output: '{"courses": []}' });
+  vi.mocked(api).mockResolvedValue({ ok: true, output: '{"courses": []}', images: [] });
   const user = show();
 
   await user.click(screen.getByRole("button", { name: "Try" }));
@@ -49,12 +49,12 @@ test("a tool without parameters runs as soon as it is opened", async () => {
 });
 
 test("an optional parameter that is left empty is not sent", async () => {
-  vi.mocked(api).mockResolvedValue({ ok: true, output: "[]" });
+  vi.mocked(api).mockResolvedValue({ ok: true, output: "[]", images: [] });
   const user = show({
     name: "list_events",
     params: [
-      { name: "from", description: "First day.", required: false },
-      { name: "search", description: "Title text.", required: false },
+      { name: "from", description: "First day.", required: false, options: [] },
+      { name: "search", description: "Title text.", required: false, options: [] },
     ],
   });
 
@@ -71,10 +71,37 @@ test("an optional parameter that is left empty is not sent", async () => {
 });
 
 test("a failing tool shows its message", async () => {
-  vi.mocked(api).mockResolvedValue({ ok: false, output: "not logged in to moodle" });
+  vi.mocked(api).mockResolvedValue({ ok: false, output: "not logged in to moodle", images: [] });
   const user = show();
 
   await user.click(screen.getByRole("button", { name: "Try" }));
 
   expect((await screen.findByRole("alert")).textContent).toBe("not logged in to moodle");
+});
+
+test("a parameter with fixed choices is a list, and the page pictures are shown", async () => {
+  vi.mocked(api).mockResolvedValue({
+    ok: true,
+    output: "[page 2]",
+    images: [{ page: 2, url: "data:image/png;base64,AAAA" }],
+  });
+  const user = show({
+    name: "read_file",
+    params: [
+      { name: "path", description: "Path of the file.", required: true, options: [] },
+      { name: "view", description: "Text or pages.", required: false, options: ["text", "pages"] },
+    ],
+  });
+
+  await user.click(screen.getByRole("button", { name: "Try" }));
+  await user.type(screen.getByLabelText("path"), "Uni/slides.pdf");
+  await user.selectOptions(screen.getByLabelText("view (optional)"), "pages");
+  await user.click(screen.getByRole("button", { name: "Run" }));
+
+  expect(api).toHaveBeenCalledWith("/tools/try", {
+    name: "read_file",
+    arguments: { path: "Uni/slides.pdf", view: "pages" },
+  });
+  const picture = await screen.findByAltText("Page 2");
+  expect(picture.getAttribute("src")).toBe("data:image/png;base64,AAAA");
 });
