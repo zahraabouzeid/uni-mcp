@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from "vitest";
-import { api } from "./api";
+import { announceClosing, api } from "./api";
 
 function backendAnswers(status: number, body: unknown) {
   const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status }));
@@ -49,4 +49,14 @@ test("passes on the backend's error message", async () => {
 test("says so when unimcp is not running", async () => {
   vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
   await expect(api("/state")).rejects.toThrow(/not running/);
+});
+
+test("says goodbye with the key in the address", () => {
+  window.history.replaceState(null, "", "/?key=abc123");
+  const sendBeacon = vi.fn();
+  vi.stubGlobal("navigator", { sendBeacon });
+
+  announceClosing();
+
+  expect(sendBeacon).toHaveBeenCalledWith("/api/closing?key=abc123");
 });

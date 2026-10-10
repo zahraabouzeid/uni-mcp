@@ -30,7 +30,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Open the dashboard: choose your university, log in, try the tools.
+    /// Run the dashboard in this window: choose your university, log in, try the tools.
     Dashboard {
         /// Only print the address instead of opening the browser.
         #[arg(long)]
@@ -67,16 +67,18 @@ async fn main() -> ExitCode {
 async fn run(cli: Cli) -> Result<(), String> {
     let secrets: Arc<dyn SecretStore> = Arc::new(KeyringStore);
     // Without a command: the dashboard for a person, the server for a program.
-    let command = cli.command.unwrap_or_else(|| {
-        if std::io::stdin().is_terminal() {
-            Command::Dashboard {
-                no_browser: false,
-                dev: false,
-            }
-        } else {
-            Command::Serve
-        }
-    });
+    let by_a_person = cli.command.is_none() && std::io::stdin().is_terminal();
+    if by_a_person && dashboard::DETACHABLE {
+        return dashboard::open_detached();
+    }
+    let command = match cli.command {
+        Some(command) => command,
+        None if by_a_person => Command::Dashboard {
+            no_browser: false,
+            dev: false,
+        },
+        None => Command::Serve,
+    };
     if let Command::Dashboard { no_browser, dev } = command {
         let mode = if dev {
             dashboard::Mode::Dev

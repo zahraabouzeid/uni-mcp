@@ -5,13 +5,13 @@ import { SERVICE_COLUMNS, ServiceRow } from "@/components/service-row";
 import { SetupView } from "@/components/setup-view";
 import { TOOL_COLUMNS, ToolRow } from "@/components/tool-row";
 import { ActionCell, Button, Cell, ErrorText, Table } from "@/components/ui";
-import { api, errorMessage, type DashboardState } from "@/lib/api";
+import { announceClosing, api, errorMessage, type DashboardState } from "@/lib/api";
 
 const VIEWS = ["services", "tools", "setup"] as const;
 type View = (typeof VIEWS)[number];
 
 const NEUTRAL = "#1f1f23";
-// unimcp stops when these requests stop coming, i.e. when the tab is closed.
+// unimcp also stops if these requests stop coming without a goodbye.
 const REFRESH_MS = 10_000;
 
 export default function Console() {
@@ -37,7 +37,11 @@ export default function Console() {
   useEffect(() => {
     load();
     const timer = setInterval(load, REFRESH_MS);
-    return () => clearInterval(timer);
+    window.addEventListener("pagehide", announceClosing);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("pagehide", announceClosing);
+    };
   }, [load]);
 
   async function chooseUniversity(id: string) {
