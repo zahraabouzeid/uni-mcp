@@ -107,23 +107,28 @@ pub async fn run(secrets: Arc<dyn SecretStore>, mode: Mode) -> Result<(), String
 
     match mode {
         Mode::Dev => {
-            println!("Backend for the live page is running (Ctrl+C to stop).");
+            println!("Backend for the live page is running.");
             println!("Page: {DEV_PAGE}/?key={}", app.key);
         }
         Mode::Page { open_browser } => {
             let url = format!("http://{address}/?key={}", app.key);
             println!("Dashboard: {url}");
-            println!("It stops by itself after you close the page (or press Ctrl+C).");
             if open_browser && open::that(&url).is_err() {
                 println!("Could not open the browser. Open the address above yourself.");
             }
         }
     }
+    println!("Press Ctrl+C to stop.");
 
     tokio::select! {
         served = axum::serve(listener, router) => served.map_err(text),
         () = page_closed(&app), if !dev => {
             println!("The dashboard was closed.");
+            Ok(())
+        }
+        // Without this, Ctrl+C ends the program with an error code.
+        _ = tokio::signal::ctrl_c() => {
+            println!("Stopped.");
             Ok(())
         }
     }
