@@ -13,6 +13,7 @@ export function ToolRow({ tool }: { tool: Tool }) {
 
   async function run(args: Record<string, string>) {
     setRunning(true);
+    setResult(null);
     try {
       setResult(await api<ToolRun>("/tools/try", { name: tool.name, arguments: args }));
     } catch (e) {
@@ -80,16 +81,7 @@ export function ToolRow({ tool }: { tool: Tool }) {
               {result.ok ? (
                 <>
                   <CodeBlock code={result.output} className="max-h-96" />
-                  {result.images.map((image, index) => (
-                    // A data: URL from the backend; next/image has nothing to optimise.
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      key={index}
-                      src={image.url}
-                      alt={image.page ? `Page ${image.page}` : "Picture"}
-                      className="mt-3 max-w-full rounded-md border border-line"
-                    />
-                  ))}
+                  {result.images.length > 0 && <Pictures images={result.images} />}
                 </>
               ) : (
                 <ErrorText>{result.output}</ErrorText>
@@ -99,5 +91,36 @@ export function ToolRow({ tool }: { tool: Tool }) {
         </DetailRow>
       )}
     </>
+  );
+}
+
+function Pictures({ images }: { images: ToolRun["images"] }) {
+  const [shown, setShown] = useState(0);
+  const index = Math.min(shown, images.length - 1);
+  const image = images[index];
+  const label = image.page ? `Page ${image.page}` : "Picture";
+
+  return (
+    <div className="mt-3 overflow-hidden rounded-md border border-line bg-canvas">
+      <div className="flex items-center justify-between gap-3 border-b border-line px-3 py-2">
+        <span className="text-muted">
+          {label}
+          {images.length > 1 && ` (${index + 1} of ${images.length})`}
+        </span>
+        {images.length > 1 && (
+          <span className="flex gap-2">
+            <Button disabled={index === 0} onClick={() => setShown(index - 1)}>
+              Previous
+            </Button>
+            <Button disabled={index === images.length - 1} onClick={() => setShown(index + 1)}>
+              Next
+            </Button>
+          </span>
+        )}
+      </div>
+      {/* A data: URL from the backend; next/image has nothing to optimise. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={image.url} alt={label} className="mx-auto max-h-[70vh] max-w-full" />
+    </div>
   );
 }

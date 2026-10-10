@@ -105,3 +105,47 @@ test("a parameter with fixed choices is a list, and the page pictures are shown"
   const picture = await screen.findByAltText("Page 2");
   expect(picture.getAttribute("src")).toBe("data:image/png;base64,AAAA");
 });
+
+test("several page pictures are shown one at a time", async () => {
+  vi.mocked(api).mockResolvedValue({
+    ok: true,
+    output: "",
+    images: [
+      { page: 4, url: "data:image/png;base64,AAAA" },
+      { page: 5, url: "data:image/png;base64,BBBB" },
+    ],
+  });
+  const user = show();
+
+  await user.click(screen.getByRole("button", { name: "Try" }));
+
+  expect(await screen.findByAltText("Page 4")).toBeTruthy();
+  expect(screen.queryByAltText("Page 5")).toBeNull();
+  expect(screen.getByText(/1 of 2/)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Previous" })).toHaveProperty("disabled", true);
+
+  await user.click(screen.getByRole("button", { name: "Next" }));
+
+  expect(screen.getByAltText("Page 5").getAttribute("src")).toBe("data:image/png;base64,BBBB");
+  expect(screen.getByText(/2 of 2/)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Next" })).toHaveProperty("disabled", true);
+});
+
+test("running a tool again clears the previous result first", async () => {
+  vi.mocked(api).mockResolvedValueOnce({ ok: true, output: "first answer", images: [] });
+  const user = show({
+    params: [{ name: "path", description: "Path.", required: false, options: [] }],
+  });
+
+  await user.click(screen.getByRole("button", { name: "Try" }));
+  await user.click(screen.getByRole("button", { name: "Run" }));
+  expect(await screen.findByText("first answer")).toBeTruthy();
+
+  let answer: (run: unknown) => void = () => {};
+  vi.mocked(api).mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+  await user.click(screen.getByRole("button", { name: "Run" }));
+
+  expect(screen.queryByText("first answer")).toBeNull();
+  answer({ ok: true, output: "second answer", images: [] });
+  expect(await screen.findByText("second answer")).toBeTruthy();
+});
