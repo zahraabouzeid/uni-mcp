@@ -39,6 +39,19 @@ Files that can be read:
 Not yet: password-protected PDFs, the old Office formats (`.doc`, `.ppt`,
 `.xls`), pictures inside Office files, and other archive types.
 
+## Prompts
+
+Ready-made requests you pick from your AI app's menu, where the app supports
+them:
+
+| Prompt                | You fill in             | What it asks for                              |
+| --------------------- | ----------------------- | --------------------------------------------- |
+| My week               | nothing                 | This week's timetable and what is due in it   |
+| Deadlines             | nothing                 | All open assignments, the soonest first       |
+| Explain a lecture     | course, optional topic  | An explanation of the matching slides         |
+| Help with an exercise | course, sheet           | Hints for an exercise sheet before a solution |
+| Summarise a course    | course                  | An overview from all of the course's material |
+
 ## Safety
 
 - **Read-only.** No tool can change, send, submit or delete anything.

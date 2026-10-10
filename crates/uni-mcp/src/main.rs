@@ -5,6 +5,7 @@ mod config;
 mod connectors;
 mod dashboard;
 mod login;
+mod prompts;
 mod scheme;
 mod server;
 
