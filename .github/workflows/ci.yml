@@ -34,7 +34,7 @@ jobs:
           path: web/out
 
   server:
-    name: MCP server (${{ matrix.os }})
+    name: MCP (${{ matrix.os }})
     # The binary embeds the built dashboard.
     needs: web
     runs-on: ${{ matrix.os }}
