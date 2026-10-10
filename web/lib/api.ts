@@ -69,3 +69,10 @@ export async function api<T>(path: string, post?: object): Promise<T> {
 export function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : "Something went wrong.";
 }
+
+// Lets unimcp stop right after the tab closes. A beacon cannot carry headers,
+// so the key goes in the address.
+export function announceClosing() {
+  const key = new URLSearchParams(window.location.search).get("key") ?? "";
+  navigator.sendBeacon(`/api/closing?key=${encodeURIComponent(key)}`);
+}

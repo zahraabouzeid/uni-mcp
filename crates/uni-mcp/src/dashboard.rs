@@ -4,7 +4,7 @@
 
 use std::net::Ipv4Addr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use axum::extract::{Request, State};
@@ -32,6 +32,9 @@ const KEY_HEADER: &str = "x-unimcp-key";
 /// The page asks for its state every few seconds, but browsers slow that down
 /// to once a minute in background tabs.
 const PAGE_GONE_AFTER: Duration = Duration::from_secs(150);
+/// A page that said it is closing may only be reloading; it gets this long to
+/// ask again.
+const CLOSING_GRACE: Duration = Duration::from_secs(4);
 
 // Shared with `web/next.config.ts` and `web/dev.mjs`.
 const DEV_PORT: u16 = 4517;
@@ -52,6 +55,15 @@ struct App {
     started: Instant,
     /// Seconds after `started` of the latest request; zero until the first.
     last_seen: Arc<AtomicU64>,
+    closing: Arc<AtomicBool>,
+}
+
+impl App {
+    fn seen_now(&self) {
+        // Plus one, because zero means "never".
+        self.last_seen
+            .store(self.started.elapsed().as_secs() + 1, Ordering::Relaxed);
+    }
 }
 
 impl App {
@@ -82,6 +94,42 @@ impl IntoResponse for ApiError {
 
 type ApiResult = Result<Json<Value>, ApiError>;
 
+/// Whether [`open_detached`] works on this system.
+pub const DETACHABLE: bool = cfg!(windows);
+
+/// Starts the dashboard as a process of its own, without a window, and comes
+/// back at once: after a double-click nothing stays open but the browser.
+#[cfg(windows)]
+pub fn open_detached() -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    use std::process::{Command, Stdio};
+
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    let mut dashboard = Command::new(std::env::current_exe().map_err(text)?)
+        .arg("dashboard")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn()
+        .map_err(text)?;
+    // Long enough for a failing start to show.
+    std::thread::sleep(Duration::from_millis(700));
+    if let Ok(Some(status)) = dashboard.try_wait()
+        && !status.success()
+    {
+        return Err("the dashboard could not start; run `unimcp dashboard` to see why".into());
+    }
+    println!("uniMCP is opening in your browser. It stops when you close the page.");
+    Ok(())
+}
+
+#[cfg(not(windows))]
+pub fn open_detached() -> Result<(), String> {
+    Err("not supported on this system".into())
+}
+
 pub async fn run(secrets: Arc<dyn SecretStore>, mode: Mode) -> Result<(), String> {
     let dev = matches!(mode, Mode::Dev);
     // `npm run dev` restarts the backend on every change and passes the same
@@ -95,6 +143,7 @@ pub async fn run(secrets: Arc<dyn SecretStore>, mode: Mode) -> Result<(), String
         key: key.into(),
         started: Instant::now(),
         last_seen: Arc::new(AtomicU64::new(0)),
+        closing: Arc::new(AtomicBool::new(false)),
     };
 
     let port = if dev { DEV_PORT } else { 0 };
@@ -146,6 +195,7 @@ fn router(app: App) -> Router {
         .layer(middleware::from_fn_with_state(app.clone(), require_key));
     Router::new()
         .nest("/api", api)
+        .route("/api/closing", post(closing))
         .fallback(page)
         .with_state(app)
 }
@@ -158,18 +208,35 @@ async fn require_key(State(app): State<App>, request: Request, next: Next) -> Re
     if sent != Some(&*app.key) {
         return StatusCode::FORBIDDEN.into_response();
     }
-    // Plus one, because zero means "never".
-    app.last_seen
-        .store(app.started.elapsed().as_secs() + 1, Ordering::Relaxed);
+    app.seen_now();
+    app.closing.store(false, Ordering::Relaxed);
     next.run(request).await
+}
+
+/// The page announces that it is being closed. A browser can only send this
+/// without headers, so the key comes in the address.
+async fn closing(State(app): State<App>, uri: Uri) -> StatusCode {
+    let key = uri
+        .query()
+        .and_then(|query| query.split('&').find_map(|pair| pair.strip_prefix("key=")));
+    if key != Some(&*app.key) {
+        return StatusCode::FORBIDDEN;
+    }
+    app.seen_now();
+    app.closing.store(true, Ordering::Relaxed);
+    StatusCode::NO_CONTENT
 }
 
 async fn page_closed(app: &App) {
     loop {
-        tokio::time::sleep(Duration::from_secs(5)).await;
+        tokio::time::sleep(Duration::from_secs(1)).await;
         let last_seen = app.last_seen.load(Ordering::Relaxed);
         let now = app.started.elapsed().as_secs() + 1;
-        if last_seen != 0 && now - last_seen > PAGE_GONE_AFTER.as_secs() {
+        let patience = match app.closing.load(Ordering::Relaxed) {
+            true => CLOSING_GRACE,
+            false => PAGE_GONE_AFTER,
+        };
+        if last_seen != 0 && now - last_seen > patience.as_secs() {
             return;
         }
     }
@@ -346,19 +413,23 @@ mod tests {
 
     const KEY: &str = "0123456789abcdef";
 
-    async fn status_of(path: &str, key: Option<&str>) -> StatusCode {
-        let app = App {
+    fn app() -> App {
+        App {
             secrets: Arc::new(MemoryStore::default()),
             key: KEY.into(),
             started: Instant::now(),
             last_seen: Arc::new(AtomicU64::new(0)),
-        };
+            closing: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    async fn status_of(path: &str, key: Option<&str>) -> StatusCode {
         let mut request = Request::builder().uri(path);
         if let Some(key) = key {
             request = request.header(KEY_HEADER, key);
         }
         let request = request.body(Body::empty()).expect("request");
-        router(app)
+        router(app())
             .oneshot(request)
             .await
             .expect("response")
@@ -382,6 +453,36 @@ mod tests {
             status_of("/api/logout", Some(KEY)).await,
             StatusCode::METHOD_NOT_ALLOWED
         );
+    }
+
+    #[tokio::test]
+    async fn a_closing_page_is_given_up_on_quickly_unless_it_comes_back() {
+        let app = app();
+        let announce = |key: &str| {
+            let request = Request::post(format!("/api/closing?key={key}"))
+                .body(Body::empty())
+                .expect("request");
+            router(app.clone()).oneshot(request)
+        };
+
+        let refused = announce("wrong").await.expect("response");
+        assert_eq!(refused.status(), StatusCode::FORBIDDEN);
+        assert!(!app.closing.load(Ordering::Relaxed));
+
+        let accepted = announce(KEY).await.expect("response");
+        assert_eq!(accepted.status(), StatusCode::NO_CONTENT);
+        assert!(app.closing.load(Ordering::Relaxed));
+
+        // A reload asks for something again, which cancels the closing.
+        let request = Request::get("/api/logout")
+            .header(KEY_HEADER, KEY)
+            .body(Body::empty())
+            .expect("request");
+        router(app.clone())
+            .oneshot(request)
+            .await
+            .expect("response");
+        assert!(!app.closing.load(Ordering::Relaxed));
     }
 
     #[tokio::test]
