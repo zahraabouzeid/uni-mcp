@@ -1,0 +1,32 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/zahraabouzeid/uni-mcp"
+
+[workspace.dependencies]
+uni-core = { path = "crates/uni-core" }
+uni-ical = { path = "crates/uni-ical" }
+uni-moodle = { path = "crates/uni-moodle" }
+uni-webdav = { path = "crates/uni-webdav" }
+
+async-trait = "0.1"
+base64 = "0.22"
+include_dir = "0.7"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-std"] }
+toml = "0.8"
+url = "2"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
