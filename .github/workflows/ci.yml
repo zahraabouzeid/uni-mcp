@@ -33,8 +33,8 @@ jobs:
           name: dashboard
           path: web/out
 
-  rust:
-    name: Rust (${{ matrix.os }})
+  server:
+    name: MCP server (${{ matrix.os }})
     # The binary embeds the built dashboard.
     needs: web
     runs-on: ${{ matrix.os }}
