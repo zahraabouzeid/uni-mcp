@@ -1,8 +1,11 @@
 # uni-mcp
 
-Give your AI app read-only access to your university: your courses, your files
-and your timetable. It runs on your own computer as an
-[MCP](https://modelcontextprotocol.io) server.
+I built uni-mcp during my studies in Computational Engineering Science at RWTH
+Aachen University, to let an AI app help me with my own courses, files and
+timetable.
+
+It gives your AI app read-only access to your university and runs on your own
+computer as an [MCP](https://modelcontextprotocol.io) server.
 
 Unofficial, and not affiliated with any university.
 
@@ -35,13 +38,23 @@ PDF files cannot be read yet.
 | ---------------------- | ------- | ------------- | ---------- |
 | RWTH Aachen University | Moodle  | Sciebo        | RWTHonline |
 
-A university is one file in [`profiles`](profiles). To add yours, copy
-`rwth.toml`, change the addresses, and open a pull request.
+A university is one file in [`profiles`](profiles). To add yours, see
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Getting started
 
-There are no downloads yet, so it is built from source. You need
-[Rust](https://rustup.rs) and [Node.js](https://nodejs.org).
+Download `unimcp` for your system from the
+[releases page](https://github.com/zahraabouzeid/uni-mcp/releases) and run it.
+
+It opens a page in your browser where you connect your services, try the tools,
+and get the line that adds it to your AI app.
+
+Browser sign-in for Moodle works on Windows only for now; elsewhere
+`unimcp login moodle` asks you to paste a link.
+
+### Building from source
+
+You need [Rust](https://rustup.rs) and [Node.js](https://nodejs.org).
 
 ```sh
 cd web && npm install && npm run build && cd ..
@@ -49,20 +62,10 @@ cargo build --release
 ./target/release/unimcp
 ```
 
-`unimcp` opens a page in your browser where you connect your services, try the
-tools, and get the line that adds it to your AI app.
+## Contributing
 
-Browser sign-in for Moodle works on Windows only for now; elsewhere
-`unimcp login moodle` asks you to paste a link.
-
-## Development
-
-See [`web/README.md`](web/README.md) for working on the page and
-[`AGENTS.md`](AGENTS.md) for the rules of the project.
-
-```sh
-cargo fmt --all && cargo clippy --all-targets && cargo test
-```
+Contributions are welcome, especially new universities. The rules and the
+workflow are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
