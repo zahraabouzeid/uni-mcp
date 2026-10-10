@@ -19,15 +19,25 @@ Unofficial, and not affiliated with any university.
 | `list_courses`      | The courses you are enrolled in                  |
 | `list_course_files` | Slides, exercise sheets and other course files   |
 | `list_assignments`  | Assignments and their deadlines                  |
-| `read_course_file`  | A course file: PDF, picture or plain text        |
+| `read_course_file`  | A course file, in the formats listed below       |
 | `list_events`       | Your timetable: lectures, exercises, exam dates  |
 | `list_files`        | A folder in your cloud storage                   |
 | `read_file`         | A file from your cloud storage, same formats     |
 | `status`            | Which services are connected                     |
 
-A PDF is read as text, or page by page as pictures, so the AI also sees
-diagrams, formulas and scanned pages. Password-protected PDFs and Office files
-cannot be read yet.
+Files that can be read:
+
+- **PDF**: as text, or page by page as pictures, so the AI also sees diagrams,
+  formulas and scanned pages.
+- **Word, PowerPoint, Excel** (`.docx`, `.pptx`, `.xlsx`): their text, slide
+  by slide and sheet by sheet.
+- **Pictures** (PNG, JPEG, GIF, WebP): as pictures.
+- **Zip archives**: a list of what is inside, and any of the files above out
+  of them.
+- **Plain text**, such as code, Markdown or CSV.
+
+Not yet: password-protected PDFs, the old Office formats (`.doc`, `.ppt`,
+`.xls`), pictures inside Office files, and other archive types.
 
 ## Safety
 
