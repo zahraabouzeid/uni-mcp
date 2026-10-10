@@ -23,7 +23,8 @@ university services: courses, files and timetable.
 ## Working here
 
 - Before finishing: `cargo fmt --all`, `cargo clippy --all-targets`,
-  `cargo test`, and in `web`: `npm run format`, `npm run lint`, `npm run build`.
+  `cargo test`, and in `web`: `npm run format`, `npm run lint`, `npm test`,
+  `npm run build`.
 - Work on a branch, never on `main`.
 - Use Conventional Commits.
 - Few comments: only where the reason is not obvious from the code.

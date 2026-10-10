@@ -23,7 +23,9 @@ The backend then prints the address to open; its key is new on every start.
 ## Shipping a change
 
 ```sh
+npm run format
 npm run lint
+npm test
 npm run build       # writes out/
 cd .. && cargo build
 ```
