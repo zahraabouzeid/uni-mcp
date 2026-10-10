@@ -26,11 +26,11 @@ data, so a few rules are strict.
 
    ```sh
    cargo fmt --all && cargo clippy --all-targets && cargo test
-   cd web && npm run format && npm run lint && npm run build
+   cd web && npm run format && npm run lint && npm test && npm run build
    ```
 
 4. Open a pull request into `main` and say what you changed and how you
-   tested it.
+   tested it. The same checks run there automatically and have to pass.
 
 ## Adding a university
 
@@ -38,6 +38,17 @@ Copy [`profiles/rwth.toml`](profiles/rwth.toml), rename it, and fill in your
 university's addresses. Leave out a section if your university does not have
 that service. Check each service against your own account before opening the
 pull request, and say in it which ones you tried.
+
+## Releasing
+
+Set the new version in the root `Cargo.toml`, merge that, then tag `main`:
+
+```sh
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+The tag starts a build for Windows, Linux and macOS and publishes a release
+with the binaries.
 
 ## Working on the code
 

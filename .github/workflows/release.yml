@@ -1,0 +1,77 @@
+name: Release
+
+# Pushing a tag like v0.1.0 builds unimcp for every system and publishes a
+# GitHub release with the binaries attached.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  web:
+    name: Setup page
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: setup-page
+          path: web/out
+
+  build:
+    name: Build (${{ matrix.asset }})
+    needs: web
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            binary: unimcp.exe
+            asset: unimcp-windows-x64.exe
+          - os: ubuntu-latest
+            binary: unimcp
+            asset: unimcp-linux-x64
+          - os: macos-latest
+            binary: unimcp
+            asset: unimcp-macos-arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: setup-page
+          path: web/out
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --locked
+      - run: cp target/release/${{ matrix.binary }} ${{ matrix.asset }}
+        shell: bash
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+
+  publish:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: unimcp-*
+          merge-multiple: true
+          path: binaries
+      - run: gh release create "$GITHUB_REF_NAME" binaries/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
