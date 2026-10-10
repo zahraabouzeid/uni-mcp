@@ -2,9 +2,10 @@
 
 # uniMCP
 
-I built uniMCP during my studies in Computational Engineering Science at RWTH
-Aachen University, to let an AI app help me with my own courses, files and
-timetable.
+I built uniMCP during my BSc. studies in
+[Computational Engineering Science](https://www.ces.rwth-aachen.de/) at
+[RWTH Aachen University](https://www.rwth-aachen.de/), to let an AI app help me
+with my own courses, files and timetable.
 
 It gives your AI app read-only access to your university and runs on your own
 computer as an [MCP](https://modelcontextprotocol.io) server.
