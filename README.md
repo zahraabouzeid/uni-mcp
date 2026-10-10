@@ -1,3 +1,5 @@
+<img src=".github/logo.svg" alt="" width="72">
+
 # uniMCP
 
 I built uniMCP during my studies in Computational Engineering Science at RWTH
