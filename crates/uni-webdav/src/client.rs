@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use reqwest::Method;
-use uni_core::document::{self, View};
+use uni_core::document::{self, Request};
 use uni_core::model::{Document, FileEntry};
 use uni_core::{Error, Files, Result};
 use url::Url;
@@ -118,12 +118,12 @@ impl Files for WebdavClient {
         })
     }
 
-    async fn read(&self, path: &str, pages: Option<&str>, view: View) -> Result<Document> {
+    async fn read(&self, path: &str, request: Request<'_>) -> Result<Document> {
         let (url, _) = self.url_for(path)?;
         let response = self.send(Method::GET, url, None).await?;
         document::check_size(response.content_length().unwrap_or(0))?;
         let bytes = response.bytes().await.map_err(|e| self.network(e))?;
-        document::read(&bytes, pages, view)
+        document::read(&bytes, request)
     }
 }
 

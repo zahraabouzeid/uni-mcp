@@ -12,7 +12,7 @@ use rmcp::{ServerHandler, ServiceExt, schemars, tool, tool_handler, tool_router}
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use uni_core::document::View;
+use uni_core::document::{Request, View};
 use uni_core::model::{Document, Image};
 
 use crate::connectors::{Connectors, ServiceKind};
@@ -72,10 +72,31 @@ struct AssignmentArgs {
 struct CourseFileArgs {
     /// `file_ref` of an entry from `list_course_files`.
     file_ref: String,
-    /// For a PDF: the pages to read, e.g. `3` or `1-10`. Omit for all pages.
+    #[serde(flatten)]
+    part: PartArgs,
+}
+
+/// Which part of a file to read; the same for both file tools.
+#[derive(Deserialize, schemars::JsonSchema)]
+struct PartArgs {
+    /// For a PDF, a presentation or a workbook: the pages, slides or sheets to
+    /// read, e.g. `3` or `1-10`. Omit for all of them.
     pages: Option<String>,
     #[serde(default)]
     view: ViewArg,
+    /// For a zip archive: the file inside it to read, named as in its listing.
+    /// Omit to get the listing.
+    entry: Option<String>,
+}
+
+impl PartArgs {
+    fn request(&self) -> Request<'_> {
+        Request {
+            pages: self.pages.as_deref(),
+            view: self.view.into(),
+            entry: self.entry.as_deref(),
+        }
+    }
 }
 
 /// `text` (the default) gives the text of the file. `pages` gives pictures
@@ -119,10 +140,8 @@ struct PathArgs {
 struct FileArgs {
     /// Path of the file inside the file store, e.g. `Uni/Analysis/notes.pdf`.
     path: String,
-    /// For a PDF: the pages to read, e.g. `3` or `1-10`. Omit for all pages.
-    pages: Option<String>,
-    #[serde(default)]
-    view: ViewArg,
+    #[serde(flatten)]
+    part: PartArgs,
 }
 
 #[tool_router]
@@ -176,14 +195,12 @@ impl UniServer {
     }
 
     #[tool(
-        description = "Read a course file (PDF, picture or plain text) by its `file_ref` from `list_course_files`. When `truncated` is true, ask for the following `pages` to go on.",
+        description = "Read a course file by its `file_ref` from `list_course_files`: PDF, Word, PowerPoint, Excel, picture, plain text, or a file inside a zip archive. When `truncated` is true, ask for the following `pages` to go on.",
         annotations(read_only_hint = true)
     )]
     async fn read_course_file(&self, Parameters(args): Parameters<CourseFileArgs>) -> ToolResult {
         let courses = self.connectors.courses().map_err(text)?;
-        let file = courses
-            .read_file(&args.file_ref, args.pages.as_deref(), args.view.into())
-            .await;
+        let file = courses.read_file(&args.file_ref, args.part.request()).await;
         render_document("course_file", file)
     }
 
@@ -213,14 +230,12 @@ impl UniServer {
     }
 
     #[tool(
-        description = "Read a file (PDF, picture or plain text) from the student's cloud storage. When `truncated` is true, ask for the following `pages` to go on.",
+        description = "Read a file from the student's cloud storage: PDF, Word, PowerPoint, Excel, picture, plain text, or a file inside a zip archive. When `truncated` is true, ask for the following `pages` to go on.",
         annotations(read_only_hint = true)
     )]
     async fn read_file(&self, Parameters(args): Parameters<FileArgs>) -> ToolResult {
         let files = self.connectors.files().map_err(text)?;
-        let file = files
-            .read(&args.path, args.pages.as_deref(), args.view.into())
-            .await;
+        let file = files.read(&args.path, args.part.request()).await;
         render_document("file", file)
     }
 }

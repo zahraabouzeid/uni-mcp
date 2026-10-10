@@ -1,5 +1,4 @@
-//! Turns a downloaded file into something the model can take in: text, and
-//! pictures of PDF pages when the text alone would lose what is on them.
+//! Turns a downloaded file into text and pictures the model can take in.
 
 use std::ops::RangeInclusive;
 use std::panic::{self, AssertUnwindSafe};
@@ -10,27 +9,31 @@ use hayro::vello_cpu::color::palette::css::WHITE;
 use hayro::{PixmapSettings, RenderCache, RenderSettings};
 
 use crate::model::{Document, Image};
-use crate::{Error, Result};
+use crate::office::{self, Office};
+use crate::{Error, Result, archive};
 
-/// Largest file a connector downloads.
 pub const MAX_FILE_BYTES: usize = 50 * 1024 * 1024;
-/// Most text handed to the model in one answer.
 pub const MAX_TEXT_BYTES: usize = 200 * 1024;
-/// Most page pictures in one answer; each costs the model about as much as a
-/// page of text.
+/// Each page picture costs the model about as much as a page of text.
 pub const MAX_PAGE_IMAGES: usize = 5;
-/// Longer side of a page picture, in pixels.
 const PAGE_IMAGE_SIDE: f32 = 1400.0;
+const ZIP: &[u8] = b"PK\x03\x04";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum View {
-    /// The text of the file.
+    #[default]
     Text,
-    /// For a PDF, pictures of its pages next to their text.
     Pages,
 }
 
-/// For refusing a download by its announced size, before fetching it.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Request<'a> {
+    /// As `3` or `2-5`, counted from one.
+    pub pages: Option<&'a str>,
+    pub view: View,
+    pub entry: Option<&'a str>,
+}
+
 pub fn check_size(bytes: u64) -> Result<()> {
     if bytes > MAX_FILE_BYTES as u64 {
         return Err(Error::InvalidInput(format!(
@@ -41,9 +44,21 @@ pub fn check_size(bytes: u64) -> Result<()> {
     Ok(())
 }
 
-/// `pages` selects pages of a PDF, as `3` or `2-5`, counted from one.
-pub fn read(bytes: &[u8], pages: Option<&str>, view: View) -> Result<Document> {
+pub fn read(bytes: &[u8], request: Request) -> Result<Document> {
     check_size(bytes.len() as u64)?;
+    let Request { pages, view, entry } = request;
+    if let Some(entry) = entry {
+        if !bytes.starts_with(ZIP) {
+            return Err(Error::InvalidInput(
+                "`entry` is only for zip archives".into(),
+            ));
+        }
+        let inner = Request {
+            entry: None,
+            ..request
+        };
+        return read(&archive::entry(bytes, entry)?, inner);
+    }
     if bytes.starts_with(b"%PDF") {
         return match view {
             View::Text => pdf_text(bytes, pages),
@@ -63,16 +78,37 @@ pub fn read(bytes: &[u8], pages: Option<&str>, view: View) -> Result<Document> {
             }],
         });
     }
-    let text = std::str::from_utf8(bytes)
-        .map_err(|_| Error::InvalidInput("only text, PDF and image files can be read".into()))?;
+    if bytes.starts_with(ZIP) {
+        return match office::read(bytes)? {
+            Some(Office::Text(text)) => Ok(plain(&text)),
+            Some(Office::Parts { unit, parts }) => {
+                let wanted = wanted(pages, parts.len())?;
+                Ok(numbered(unit, &parts, wanted))
+            }
+            None => Ok(plain(&archive::list(bytes)?)),
+        };
+    }
+    if bytes.starts_with(&[0xd0, 0xcf, 0x11, 0xe0]) {
+        return Err(Error::InvalidInput(
+            "old Office files (.doc, .ppt, .xls) cannot be read, only .docx, .pptx and .xlsx"
+                .into(),
+        ));
+    }
+    let text = std::str::from_utf8(bytes).map_err(|_| {
+        Error::InvalidInput("only text, PDF, picture and Office files can be read".into())
+    })?;
+    Ok(plain(text))
+}
+
+fn plain(text: &str) -> Document {
     let kept = fitting(text);
-    Ok(Document {
+    Document {
         text: kept.to_owned(),
         page_count: None,
         pages: None,
         truncated: kept.len() < text.len(),
         images: Vec::new(),
-    })
+    }
 }
 
 fn image_type(bytes: &[u8]) -> Option<&'static str> {
@@ -103,7 +139,7 @@ fn unreadable(why: impl std::fmt::Display) -> Error {
     Error::InvalidInput(format!("could not read this PDF: {why}"))
 }
 
-/// The text of every page. The PDF libraries panic on some damaged files.
+/// The PDF libraries panic on some damaged files.
 fn page_texts(bytes: &[u8]) -> Result<Vec<String>> {
     panic::catch_unwind(|| pdf_extract::extract_text_from_mem_by_pages(bytes))
         .map_err(|_| unreadable("it is damaged or uses an unsupported feature"))?
@@ -112,10 +148,7 @@ fn page_texts(bytes: &[u8]) -> Result<Vec<String>> {
 
 fn pdf_text(bytes: &[u8], pages: Option<&str>) -> Result<Document> {
     let all = page_texts(bytes)?;
-    let wanted = match pages {
-        Some(pages) => parse_pages(pages, all.len())?,
-        None => 1..=all.len(),
-    };
+    let wanted = wanted(pages, all.len())?;
     if all[wanted.start() - 1..*wanted.end()]
         .iter()
         .all(|page| page.trim().is_empty())
@@ -125,11 +158,21 @@ fn pdf_text(bytes: &[u8], pages: Option<&str>) -> Result<Document> {
                 .into(),
         ));
     }
+    Ok(numbered("page", &all, wanted))
+}
 
+fn wanted(pages: Option<&str>, count: usize) -> Result<RangeInclusive<usize>> {
+    match pages {
+        Some(pages) => parse_pages(pages, count),
+        None => Ok(1..=count),
+    }
+}
+
+fn numbered(unit: &str, all: &[String], wanted: RangeInclusive<usize>) -> Document {
     let mut text = String::new();
     let mut last = None;
     for number in wanted.clone() {
-        let page = page_text(number, &all[number - 1]);
+        let page = marked(unit, number, &all[number - 1]);
         if text.len() + page.len() > MAX_TEXT_BYTES {
             // A single page that is too long is still better cut than left out.
             if last.is_none() {
@@ -141,15 +184,17 @@ fn pdf_text(bytes: &[u8], pages: Option<&str>) -> Result<Document> {
         text.push_str(&page);
         last = Some(number);
     }
-    let last = last.unwrap_or(*wanted.start());
+    let cut_short = last.is_some_and(|last| {
+        last < *wanted.end() || marked(unit, last, &all[last - 1]).len() > MAX_TEXT_BYTES
+    });
 
-    Ok(Document {
-        truncated: last < *wanted.end() || page_text(last, &all[last - 1]).len() > MAX_TEXT_BYTES,
+    Document {
+        truncated: cut_short,
         text,
         page_count: Some(all.len()),
-        pages: Some(format!("{}-{last}", wanted.start())),
+        pages: last.map(|last| format!("{}-{last}", wanted.start())),
         images: Vec::new(),
-    })
+    }
 }
 
 fn pdf_pages(bytes: &[u8], pages: Option<&str>) -> Result<Document> {
@@ -164,7 +209,7 @@ fn pdf_pages(bytes: &[u8], pages: Option<&str>) -> Result<Document> {
         return Err(unreadable("it has no pages"));
     };
     let text = (first..=last)
-        .filter_map(|number| Some(page_text(number, texts.get(number - 1)?)))
+        .filter_map(|number| Some(marked("page", number, texts.get(number - 1)?)))
         .collect::<String>();
 
     Ok(Document {
@@ -185,10 +230,7 @@ struct Rendered {
 fn render(bytes: &[u8], pages: Option<&str>) -> Result<Rendered> {
     let pdf = Pdf::new(bytes.to_vec()).map_err(|_| unreadable("it is not a valid PDF"))?;
     let all = pdf.pages();
-    let wanted = match pages {
-        Some(pages) => parse_pages(pages, all.len())?,
-        None => 1..=all.len(),
-    };
+    let wanted = wanted(pages, all.len())?;
 
     let cache = RenderCache::new();
     let mut images = Vec::new();
@@ -222,8 +264,8 @@ fn render(bytes: &[u8], pages: Option<&str>) -> Result<Rendered> {
     })
 }
 
-fn page_text(number: usize, text: &str) -> String {
-    format!("[page {number}]\n{}\n\n", text.trim())
+fn marked(unit: &str, number: usize, text: &str) -> String {
+    format!("[{unit} {number}]\n{}\n\n", text.trim())
 }
 
 fn parse_pages(pages: &str, count: usize) -> Result<RangeInclusive<usize>> {
@@ -242,7 +284,6 @@ fn parse_pages(pages: &str, count: usize) -> Result<RangeInclusive<usize>> {
     Ok(first..=last.min(count))
 }
 
-/// The start of `text` that fits into one answer, cut between characters.
 fn fitting(text: &str) -> &str {
     let mut end = text.len().min(MAX_TEXT_BYTES);
     while !text.is_char_boundary(end) {
@@ -254,8 +295,8 @@ fn fitting(text: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::office::testing::{archive, slide};
 
-    /// A minimal PDF with one line of text per page.
     fn pdf(pages: &[&str]) -> Vec<u8> {
         let count = pages.len();
         let kids: Vec<String> = (0..count).map(|i| format!("{} 0 R", 4 + 2 * i)).collect();
@@ -302,7 +343,20 @@ mod tests {
     }
 
     fn text(bytes: &[u8], pages: Option<&str>) -> Result<Document> {
-        read(bytes, pages, View::Text)
+        let request = Request {
+            pages,
+            ..Request::default()
+        };
+        read(bytes, request)
+    }
+
+    fn pictures(bytes: &[u8], pages: Option<&str>) -> Result<Document> {
+        let request = Request {
+            pages,
+            view: View::Pages,
+            entry: None,
+        };
+        read(bytes, request)
     }
 
     #[test]
@@ -369,7 +423,7 @@ mod tests {
         let bytes = pdf(&["Alpha", "Beta"]);
         for pages in ["0", "3", "2-1", "two", "1-"] {
             assert!(text(&bytes, Some(pages)).is_err(), "{pages}");
-            assert!(read(&bytes, Some(pages), View::Pages).is_err(), "{pages}");
+            assert!(pictures(&bytes, Some(pages)).is_err(), "{pages}");
         }
     }
 
@@ -383,13 +437,13 @@ mod tests {
     fn a_damaged_pdf_is_an_error_not_a_crash() {
         let damaged = b"%PDF-1.4\nthis is not a pdf";
         assert!(text(damaged, None).is_err());
-        assert!(read(damaged, None, View::Pages).is_err());
+        assert!(pictures(damaged, None).is_err());
     }
 
     #[test]
     fn pages_come_back_as_pictures_with_their_text() {
         let bytes = pdf(&["Alpha", "Beta", "Gamma"]);
-        let document = read(&bytes, Some("2-3"), View::Pages).expect("pages");
+        let document = pictures(&bytes, Some("2-3")).expect("pages");
         assert_eq!(document.page_count, Some(3));
         assert_eq!(document.pages.as_deref(), Some("2-3"));
         assert!(!document.truncated);
@@ -405,16 +459,99 @@ mod tests {
 
     #[test]
     fn a_page_without_text_still_gives_its_picture() {
-        let document = read(&pdf(&[""]), None, View::Pages).expect("pages");
+        let document = pictures(&pdf(&[""]), None).expect("pages");
         assert_eq!(document.images.len(), 1);
     }
 
     #[test]
     fn only_a_few_pictures_are_sent_at_once() {
         let lines = vec!["Slide"; MAX_PAGE_IMAGES + 2];
-        let document = read(&pdf(&lines), None, View::Pages).expect("pages");
+        let document = pictures(&pdf(&lines), None).expect("pages");
         assert_eq!(document.images.len(), MAX_PAGE_IMAGES);
         assert_eq!(document.pages, Some(format!("1-{MAX_PAGE_IMAGES}")));
         assert!(document.truncated);
+    }
+
+    #[test]
+    fn slides_are_numbered_and_can_be_picked_like_pages() {
+        let presentation = archive(&[
+            ("ppt/slides/slide1.xml", &slide(&["Mechanics I"])),
+            ("ppt/slides/slide2.xml", &slide(&["Forces"])),
+            ("ppt/slides/slide3.xml", &slide(&["Summary"])),
+        ]);
+        let all = text(&presentation, None).expect("pptx");
+        assert_eq!(all.page_count, Some(3));
+        assert_eq!(all.pages.as_deref(), Some("1-3"));
+        assert!(all.text.contains("[slide 1]\nMechanics I"));
+        assert!(all.text.contains("[slide 3]\nSummary"));
+
+        let one = text(&presentation, Some("2")).expect("pptx");
+        assert_eq!(one.pages.as_deref(), Some("2-2"));
+        assert!(one.text.contains("Forces") && !one.text.contains("Summary"));
+        assert!(text(&presentation, Some("4")).is_err());
+    }
+
+    #[test]
+    fn a_word_document_is_text_without_pages() {
+        let xml = r#"<w:document xmlns:w="urn:w"><w:body>
+            <w:p><w:r><w:t>Exercise sheet 1</w:t></w:r></w:p>
+        </w:body></w:document>"#;
+        let document = text(&archive(&[("word/document.xml", xml)]), None).expect("docx");
+        assert_eq!(document.text, "Exercise sheet 1");
+        assert_eq!(document.page_count, None);
+    }
+
+    #[test]
+    fn a_zip_is_listed_and_one_file_can_be_read_out_of_it() {
+        let zip = archive(&[
+            ("sheet1/task.txt", "Solve the equation."),
+            ("slides.pptx", "not opened here"),
+        ]);
+        let listing = text(&zip, None).expect("zip");
+        assert!(listing.text.contains("sheet1/task.txt"));
+        assert!(listing.text.contains("entry"));
+
+        let entry = Request {
+            entry: Some("sheet1/task.txt"),
+            ..Request::default()
+        };
+        assert_eq!(
+            read(&zip, entry).expect("entry").text,
+            "Solve the equation."
+        );
+
+        let missing = Request {
+            entry: Some("nope.txt"),
+            ..Request::default()
+        };
+        assert!(read(&zip, missing).is_err());
+        assert!(read(b"plain text", entry).is_err());
+    }
+
+    #[test]
+    fn a_file_inside_a_zip_is_read_like_any_other() {
+        let inner = pdf(&["Alpha", "Beta"]);
+        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        writer
+            .start_file("slides.pdf", zip::write::SimpleFileOptions::default())
+            .expect("start");
+        std::io::Write::write_all(&mut writer, &inner).expect("write");
+        let zip = writer.finish().expect("finish").into_inner();
+
+        let request = Request {
+            pages: Some("2"),
+            view: View::Pages,
+            entry: Some("slides.pdf"),
+        };
+        let document = read(&zip, request).expect("pdf in zip");
+        assert_eq!(document.page_count, Some(2));
+        assert!(document.text.contains("Beta"));
+        assert_eq!(document.images.len(), 1);
+    }
+
+    #[test]
+    fn old_office_files_say_which_formats_work() {
+        let error = text(&[0xd0, 0xcf, 0x11, 0xe0, 0xa1], None).expect_err("old format");
+        assert!(error.to_string().contains(".docx"));
     }
 }

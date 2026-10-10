@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
 use crate::Result;
-use crate::document::View;
+use crate::document::Request;
 use crate::model::{Assignment, Course, CourseFile, Document, Event, FileEntry};
 
 #[async_trait]
@@ -10,8 +10,7 @@ pub trait Courses: Send + Sync {
     async fn list_course_files(&self, course_id: &str) -> Result<Vec<CourseFile>>;
     /// `None` lists the assignments of all enrolled courses.
     async fn list_assignments(&self, course_id: Option<&str>) -> Result<Vec<Assignment>>;
-    /// `pages` selects pages of a PDF, see [`crate::document::read`].
-    async fn read_file(&self, file_ref: &str, pages: Option<&str>, view: View) -> Result<Document>;
+    async fn read_file(&self, file_ref: &str, request: Request<'_>) -> Result<Document>;
 }
 
 #[async_trait]
@@ -30,6 +29,5 @@ pub trait Calendar: Send + Sync {
 #[async_trait]
 pub trait Files: Send + Sync {
     async fn list(&self, path: &str) -> Result<Vec<FileEntry>>;
-    /// `pages` selects pages of a PDF, see [`crate::document::read`].
-    async fn read(&self, path: &str, pages: Option<&str>, view: View) -> Result<Document>;
+    async fn read(&self, path: &str, request: Request<'_>) -> Result<Document>;
 }
