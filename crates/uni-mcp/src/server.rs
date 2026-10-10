@@ -325,7 +325,7 @@ fn params(schema: &serde_json::Map<String, Value>) -> Vec<ParamInfo> {
     let Some(properties) = schema.get("properties").and_then(Value::as_object) else {
         return Vec::new();
     };
-    properties
+    let mut params: Vec<ParamInfo> = properties
         .iter()
         .map(|(name, property)| {
             // A parameter with fixed choices is described once, under `$defs`.
@@ -354,7 +354,10 @@ fn params(schema: &serde_json::Map<String, Value>) -> Vec<ParamInfo> {
                     .unwrap_or_default(),
             }
         })
-        .collect()
+        .collect();
+    // The dashboard shows them in this order: what has to be filled in first.
+    params.sort_by_key(|param| !param.required);
+    params
 }
 
 fn service_of(tool: &str) -> Option<ServiceKind> {
@@ -447,6 +450,14 @@ mod tests {
         assert_eq!(files.params[0].name, "course_id");
         assert!(files.params[0].required);
         assert!(!files.params[0].description.is_empty());
+    }
+
+    #[test]
+    fn required_parameters_come_first() {
+        let tools = tools();
+        let read = tools.iter().find(|t| t.name == "read_file").expect("tool");
+        let names: Vec<&str> = read.params.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["path", "entry", "pages", "view"]);
     }
 
     #[test]
