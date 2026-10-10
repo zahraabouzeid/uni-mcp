@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use uni_core::{Error, Result};
 
-/// What the student chose during setup. Holds no secrets.
+/// What the student chose on the dashboard. Holds no secrets.
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Config {
     /// Id of the chosen university.

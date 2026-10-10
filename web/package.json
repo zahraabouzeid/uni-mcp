@@ -5,10 +5,12 @@
   "scripts": {
     "dev": "node dev.mjs",
     "dev:page": "next dev -H localhost",
-    "dev:backend": "cargo run --manifest-path ../Cargo.toml -- setup --dev",
+    "dev:backend": "cargo run --manifest-path ../Cargo.toml -- dashboard --dev",
     "build": "next build",
     "lint": "eslint",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "next": "16.4.0",
@@ -17,13 +19,18 @@
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
-    "@types/node": "^20",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
+    "@types/node": "^22.20.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6.1.2",
     "eslint": "^9",
     "eslint-config-next": "16.4.0",
+    "jsdom": "^29.1.1",
     "prettier": "^3.9.10",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^5.0.3"
   }
 }

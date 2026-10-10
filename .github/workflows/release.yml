@@ -1,0 +1,113 @@
+name: Release
+
+# Publishes the version in Cargo.toml once: when a new version number reaches
+# main, or when the workflow is started by hand from the Actions tab.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Version
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      unreleased: ${{ steps.version.outputs.unreleased }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 |
+            jq -r '.packages[] | select(.name == "uni-mcp") | .version')
+          tag="v$version"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if gh release view "$tag" > /dev/null 2>&1; then
+            echo "unreleased=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::$tag is already released. Change the version in Cargo.toml to release again."
+          else
+            echo "unreleased=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  web:
+    name: Dashboard
+    needs: version
+    if: needs.version.outputs.unreleased == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dashboard
+          path: web/out
+
+  build:
+    name: Build (${{ matrix.asset }})
+    needs: web
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            binary: unimcp.exe
+            asset: unimcp-windows-x64.exe
+          - os: ubuntu-latest
+            binary: unimcp
+            asset: unimcp-linux-x64
+          - os: macos-latest
+            binary: unimcp
+            asset: unimcp-macos-arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dashboard
+          path: web/out
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --locked
+      - run: cp target/release/${{ matrix.binary }} ${{ matrix.asset }}
+        shell: bash
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+
+  publish:
+    name: Publish
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: unimcp-*
+          merge-multiple: true
+          path: binaries
+      # Creates the tag on the commit that was built.
+      - run: >
+          gh release create "$TAG" binaries/*
+          --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA"
+          --title "$TAG" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}

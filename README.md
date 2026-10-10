@@ -1,8 +1,11 @@
-# uni-mcp
+<img src=".github/logo.svg" alt="" width="72">
 
-I built uni-mcp during my studies in Computational Engineering Science at RWTH
-Aachen University, to let an AI app help me with my own courses, files and
-timetable.
+# uniMCP
+
+I built uniMCP during my BSc. studies in
+[Computational Engineering Science](https://www.ces.rwth-aachen.de/) at
+[RWTH Aachen University](https://www.rwth-aachen.de/), to let an AI app help me
+with my own courses, files and timetable.
 
 It gives your AI app read-only access to your university and runs on your own
 computer as an [MCP](https://modelcontextprotocol.io) server.
@@ -46,8 +49,8 @@ A university is one file in [`profiles`](profiles). To add yours, see
 Download `unimcp` for your system from the
 [releases page](https://github.com/zahraabouzeid/uni-mcp/releases) and run it.
 
-It opens a page in your browser where you connect your services, try the tools,
-and get the line that adds it to your AI app.
+It opens the dashboard in your browser, where you connect your services, try
+the tools, and get the line that adds it to your AI app.
 
 Browser sign-in for Moodle works on Windows only for now; elsewhere
 `unimcp login moodle` asks you to paste a link.

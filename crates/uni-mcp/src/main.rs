@@ -1,12 +1,12 @@
-//! `unimcp`: the setup page and commands for the student, and the MCP server
+//! `unimcp`: the dashboard and commands for the student, and the MCP server
 //! their AI client talks to.
 
 mod config;
 mod connectors;
+mod dashboard;
 mod login;
 mod scheme;
 mod server;
-mod setup;
 
 use std::io::IsTerminal;
 use std::process::ExitCode;
@@ -21,7 +21,7 @@ use crate::connectors::Connectors;
 #[derive(Parser)]
 #[command(name = "unimcp", version, about)]
 struct Cli {
-    /// University to use instead of the one chosen during setup.
+    /// University to use instead of the one chosen on the dashboard.
     #[arg(long, env = "UNIMCP_PROFILE", global = true)]
     profile: Option<String>,
     #[command(subcommand)]
@@ -30,8 +30,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Open the setup page: choose your university, log in, see the tools.
-    Setup {
+    /// Open the dashboard: choose your university, log in, try the tools.
+    Dashboard {
         /// Only print the address instead of opening the browser.
         #[arg(long)]
         no_browser: bool,
@@ -66,10 +66,10 @@ async fn main() -> ExitCode {
 
 async fn run(cli: Cli) -> Result<(), String> {
     let secrets: Arc<dyn SecretStore> = Arc::new(KeyringStore);
-    // Without a command: the setup page for a person, the server for a program.
+    // Without a command: the dashboard for a person, the server for a program.
     let command = cli.command.unwrap_or_else(|| {
         if std::io::stdin().is_terminal() {
-            Command::Setup {
+            Command::Dashboard {
                 no_browser: false,
                 dev: false,
             }
@@ -77,15 +77,15 @@ async fn run(cli: Cli) -> Result<(), String> {
             Command::Serve
         }
     });
-    if let Command::Setup { no_browser, dev } = command {
+    if let Command::Dashboard { no_browser, dev } = command {
         let mode = if dev {
-            setup::Mode::Dev
+            dashboard::Mode::Dev
         } else {
-            setup::Mode::Page {
+            dashboard::Mode::Page {
                 open_browser: !no_browser,
             }
         };
-        return setup::run(secrets, mode).await;
+        return dashboard::run(secrets, mode).await;
     }
 
     let profile_id = match cli.profile {
@@ -99,7 +99,7 @@ async fn run(cli: Cli) -> Result<(), String> {
     let connectors = Connectors::new(profile, secrets);
 
     match command {
-        Command::Setup { .. } => Ok(()),
+        Command::Dashboard { .. } => Ok(()),
         Command::Serve => server::serve(connectors).await,
         Command::Login { service } => login::login(&connectors, &service)
             .await

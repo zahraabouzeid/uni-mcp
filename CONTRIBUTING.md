@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for wanting to help. uni-mcp handles students' logins and university
+Thanks for wanting to help. uniMCP handles students' logins and university
 data, so a few rules are strict.
 
 ## Rules
@@ -26,11 +26,11 @@ data, so a few rules are strict.
 
    ```sh
    cargo fmt --all && cargo clippy --all-targets && cargo test
-   cd web && npm run format && npm run lint && npm run build
+   cd web && npm run format && npm run lint && npm test && npm run build
    ```
 
 4. Open a pull request into `main` and say what you changed and how you
-   tested it.
+   tested it. The same checks run there automatically and have to pass.
 
 ## Adding a university
 
@@ -39,10 +39,19 @@ university's addresses. Leave out a section if your university does not have
 that service. Check each service against your own account before opening the
 pull request, and say in it which ones you tried.
 
+## Releasing
+
+Change the version in the root `Cargo.toml` in a pull request. When it is
+merged, the new version is built for Windows, Linux and macOS, tagged, and
+published as a release with the binaries.
+
+The Release workflow can also be started by hand from the Actions tab. It
+publishes the version in `Cargo.toml` if that one is not released yet.
+
 ## Working on the code
 
 - [`AGENTS.md`](AGENTS.md) has the layout of the repository.
-- [`web/README.md`](web/README.md) explains the setup page and `npm run dev`.
+- [`web/README.md`](web/README.md) explains the dashboard and `npm run dev`.
 
 By contributing you agree that your work is licensed under the
 [AGPL-3.0](LICENSE), like the rest of the project.

@@ -207,7 +207,7 @@ pub struct ParamInfo {
     pub required: bool,
 }
 
-/// The tools as the setup page lists them, from the schema AI clients get.
+/// The tools as the dashboard lists them, from the schema AI clients get.
 pub fn tools() -> Vec<ToolInfo> {
     UniServer::tool_router()
         .list_all()
@@ -255,7 +255,7 @@ fn service_of(tool: &str) -> Option<ServiceKind> {
     }
 }
 
-/// Runs one tool the way an AI client would, for the Try button of the setup page.
+/// Runs one tool the way an AI client would, for the Try button of the dashboard.
 pub async fn try_tool(connectors: Connectors, name: &str, arguments: Value) -> ToolResult {
     let server = UniServer::new(connectors);
     match name {
@@ -280,27 +280,7 @@ fn parse<T: DeserializeOwned>(arguments: Value) -> Result<Parameters<T>, String>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use uni_core::profile::Profile;
-    use uni_core::secrets::MemoryStore;
-
-    const UNIVERSITY: &str = r#"
-        id = "test"
-        name = "Test University"
-        [moodle]
-        base_url = "https://moodle.example"
-        [webdav]
-        id = "cloud"
-        name = "Cloud"
-        files_url = "https://cloud.example/dav/{user}/"
-        [calendar]
-        host = "campus.example"
-        timezone = "Europe/Berlin"
-    "#;
-
-    fn connectors() -> Connectors {
-        let profile = Profile::parse(UNIVERSITY).expect("profile");
-        Connectors::new(profile, Arc::new(MemoryStore::default()))
-    }
+    use crate::connectors::testing::connectors;
 
     #[test]
     fn every_tool_is_declared_read_only() {

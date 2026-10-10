@@ -30,6 +30,11 @@ uni-ical.workspace = true
 uni-moodle.workspace = true
 uni-webdav.workspace = true
 
+[dev-dependencies]
+base64.workspace = true
+md5.workspace = true
+tower = { version = "0.5", features = ["util"] }
+
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"
 

@@ -192,8 +192,88 @@ impl Connectors {
 
     fn not_offered(&self, what: &str) -> Error {
         Error::Config(format!(
-            "{} does not have {what} in uni-mcp",
+            "{} does not have {what} in uniMCP",
             self.profile.name
         ))
+    }
+}
+
+#[cfg(test)]
+pub mod testing {
+    use uni_core::secrets::MemoryStore;
+
+    use super::*;
+
+    pub const MOODLE_URL: &str = "https://moodle.example";
+
+    const UNIVERSITY: &str = r#"
+        id = "test"
+        name = "Test University"
+        [moodle]
+        base_url = "https://moodle.example"
+        [webdav]
+        id = "cloud"
+        name = "Cloud"
+        files_url = "https://cloud.example/dav/{user}/"
+        [calendar]
+        host = "campus.example"
+        timezone = "Europe/Berlin"
+    "#;
+
+    /// A made-up university with every service and an empty keyring.
+    pub fn connectors() -> Connectors {
+        let profile = Profile::parse(UNIVERSITY).expect("profile");
+        Connectors::new(profile, Arc::new(MemoryStore::default()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::testing::connectors;
+    use super::*;
+
+    #[test]
+    fn lists_every_service_of_the_profile() {
+        let services = connectors().services();
+        let kinds: Vec<_> = services.iter().map(|s| (s.id.as_str(), s.kind)).collect();
+        assert_eq!(
+            kinds,
+            [
+                ("moodle", ServiceKind::Moodle),
+                ("cloud", ServiceKind::Webdav),
+                ("calendar", ServiceKind::Calendar),
+            ]
+        );
+        assert!(services.iter().all(|s| matches!(s.logged_in, Ok(false))));
+    }
+
+    #[test]
+    fn a_stored_secret_counts_as_logged_in() {
+        let connectors = connectors();
+        connectors
+            .secrets()
+            .set(&connectors.secret_key("moodle"), "t0ken")
+            .expect("set");
+        let moodle = &connectors.services()[0];
+        assert!(matches!(moodle.logged_in, Ok(true)));
+    }
+
+    #[test]
+    fn status_never_shows_a_secret() {
+        let connectors = connectors();
+        connectors
+            .secrets()
+            .set(&connectors.secret_key("moodle"), "t0ken")
+            .expect("set");
+        let status = connectors.status().join("\n");
+        assert!(status.contains("moodle: logged in"));
+        assert!(status.contains("cloud: not logged in"));
+        assert!(!status.contains("t0ken"));
+    }
+
+    #[test]
+    fn a_service_without_login_says_how_to_log_in() {
+        let error = connectors().files().err().expect("not logged in");
+        assert!(error.to_string().contains("unimcp login cloud"));
     }
 }

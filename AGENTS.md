@@ -1,4 +1,4 @@
-# uni-mcp
+# uniMCP
 
 A local, read-only MCP server that gives AI apps access to a student's
 university services: courses, files and timetable.
@@ -16,14 +16,15 @@ university services: courses, files and timetable.
 
 - `crates/uni-core`: traits, data types, profiles, secret storage
 - `crates/uni-moodle`, `uni-webdav`, `uni-ical`: one connector per service
-- `crates/uni-mcp`: the `unimcp` binary (MCP tools, commands, setup backend)
-- `web`: the setup page, see `web/AGENTS.md` and `web/README.md`
+- `crates/uni-mcp`: the `unimcp` binary (MCP tools, commands, dashboard backend)
+- `web`: the dashboard, see `web/AGENTS.md` and `web/README.md`
 - `profiles`: one file per university
 
 ## Working here
 
 - Before finishing: `cargo fmt --all`, `cargo clippy --all-targets`,
-  `cargo test`, and in `web`: `npm run format`, `npm run lint`, `npm run build`.
+  `cargo test`, and in `web`: `npm run format`, `npm run lint`, `npm test`,
+  `npm run build`.
 - Work on a branch, never on `main`.
 - Use Conventional Commits.
 - Few comments: only where the reason is not obvious from the code.

@@ -1,4 +1,4 @@
-//! Shared foundation of uni-mcp: capability traits, data types, university
+//! Shared foundation of uniMCP: capability traits, data types, university
 //! profiles and secret storage. Knows nothing about any one service or MCP.
 
 pub mod capability;
