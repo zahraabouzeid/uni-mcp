@@ -2525,10 +2525,12 @@ name = "uni-mcp"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "clap",
  "dirs",
  "getrandom 0.4.3",
  "include_dir",
+ "md5",
  "mime_guess",
  "open",
  "reqwest",
@@ -2539,6 +2541,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "toml",
+ "tower",
  "uni-core",
  "uni-ical",
  "uni-moodle",

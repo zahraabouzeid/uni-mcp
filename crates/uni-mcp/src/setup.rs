@@ -101,19 +101,7 @@ pub async fn run(secrets: Arc<dyn SecretStore>, mode: Mode) -> Result<(), String
         .map_err(|e| format!("cannot listen on port {port}: {e}"))?;
     let address = listener.local_addr().map_err(text)?;
 
-    let api = Router::new()
-        .route("/state", get(state))
-        .route("/university", post(choose_university))
-        .route("/login/moodle", post(start_moodle).get(moodle_progress))
-        .route("/login/webdav", post(login_webdav))
-        .route("/login/calendar", post(login_calendar))
-        .route("/logout", post(logout))
-        .route("/tools/try", post(try_tool))
-        .layer(middleware::from_fn_with_state(app.clone(), require_key));
-    let router = Router::new()
-        .nest("/api", api)
-        .fallback(page)
-        .with_state(app.clone());
+    let router = router(app.clone());
 
     match mode {
         Mode::Dev => {
@@ -137,6 +125,22 @@ pub async fn run(secrets: Arc<dyn SecretStore>, mode: Mode) -> Result<(), String
             Ok(())
         }
     }
+}
+
+fn router(app: App) -> Router {
+    let api = Router::new()
+        .route("/state", get(state))
+        .route("/university", post(choose_university))
+        .route("/login/moodle", post(start_moodle).get(moodle_progress))
+        .route("/login/webdav", post(login_webdav))
+        .route("/login/calendar", post(login_calendar))
+        .route("/logout", post(logout))
+        .route("/tools/try", post(try_tool))
+        .layer(middleware::from_fn_with_state(app.clone(), require_key));
+    Router::new()
+        .nest("/api", api)
+        .fallback(page)
+        .with_state(app)
 }
 
 async fn require_key(State(app): State<App>, request: Request, next: Next) -> Response {
@@ -313,4 +317,62 @@ fn random_key() -> Result<String, String> {
 
 fn text(e: impl std::fmt::Display) -> String {
     e.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::body::Body;
+    use tower::ServiceExt;
+    use uni_core::secrets::MemoryStore;
+
+    use super::*;
+
+    const KEY: &str = "0123456789abcdef";
+
+    async fn status_of(path: &str, key: Option<&str>) -> StatusCode {
+        let app = App {
+            secrets: Arc::new(MemoryStore::default()),
+            key: KEY.into(),
+            started: Instant::now(),
+            last_seen: Arc::new(AtomicU64::new(0)),
+        };
+        let mut request = Request::builder().uri(path);
+        if let Some(key) = key {
+            request = request.header(KEY_HEADER, key);
+        }
+        let request = request.body(Body::empty()).expect("request");
+        router(app)
+            .oneshot(request)
+            .await
+            .expect("response")
+            .status()
+    }
+
+    #[tokio::test]
+    async fn the_api_refuses_requests_without_the_key() {
+        assert_eq!(status_of("/api/state", None).await, StatusCode::FORBIDDEN);
+        assert_eq!(
+            status_of("/api/state", Some("wrong")).await,
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(status_of("/api/logout", None).await, StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn the_key_gets_a_request_past_the_check() {
+        // `logout` only takes POST, so this answer comes from behind the check.
+        assert_eq!(
+            status_of("/api/logout", Some(KEY)).await,
+            StatusCode::METHOD_NOT_ALLOWED
+        );
+    }
+
+    #[tokio::test]
+    async fn the_page_is_served_without_a_key() {
+        assert_eq!(status_of("/", None).await, StatusCode::OK);
+        assert_eq!(
+            status_of("/no-such-file.js", None).await,
+            StatusCode::NOT_FOUND
+        );
+    }
 }

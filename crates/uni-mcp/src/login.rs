@@ -226,3 +226,109 @@ fn prompt_webdav(service: &str) -> Result<WebdavLogin> {
 fn io_error(e: io::Error) -> Error {
     Error::InvalidInput(format!("could not read input: {e}"))
 }
+
+#[cfg(test)]
+mod tests {
+    use base64::Engine;
+    use base64::engine::general_purpose::STANDARD;
+
+    use super::*;
+    use crate::connectors::testing::{MOODLE_URL, connectors};
+
+    const PASSPORT: &str = "p1";
+
+    fn redirect(passport: &str, token: &str) -> String {
+        let signature = format!("{:x}", md5::compute(format!("{MOODLE_URL}{passport}")));
+        let payload = STANDARD.encode(format!("{signature}:::{token}"));
+        format!("{}://token={payload}", scheme::SCHEME)
+    }
+
+    fn waiting_for_sign_in() -> Connectors {
+        let connectors = connectors();
+        connectors
+            .secrets()
+            .set(&connectors.secret_key(PENDING), PASSPORT)
+            .expect("set");
+        connectors
+    }
+
+    fn stored(connectors: &Connectors, service: &str) -> Option<String> {
+        connectors
+            .secrets()
+            .get(&connectors.secret_key(service))
+            .expect("get")
+    }
+
+    #[test]
+    fn the_callback_stores_the_token_and_finishes_the_sign_in() {
+        let connectors = waiting_for_sign_in();
+        assert!(matches!(
+            moodle_progress(&connectors),
+            Ok(Progress::Waiting)
+        ));
+
+        callback(&connectors, &redirect(PASSPORT, "abc123")).expect("callback");
+
+        assert_eq!(
+            stored(&connectors, uni_moodle::SERVICE).as_deref(),
+            Some("abc123")
+        );
+        assert!(matches!(moodle_progress(&connectors), Ok(Progress::Done)));
+    }
+
+    #[test]
+    fn a_redirect_from_another_attempt_fails_the_sign_in() {
+        let connectors = waiting_for_sign_in();
+
+        assert!(callback(&connectors, &redirect("other", "abc123")).is_err());
+
+        assert_eq!(stored(&connectors, uni_moodle::SERVICE), None);
+        assert!(matches!(
+            moodle_progress(&connectors),
+            Ok(Progress::Failed(_))
+        ));
+        // The failure is reported once, then the attempt is over.
+        assert!(matches!(moodle_progress(&connectors), Ok(Progress::Done)));
+    }
+
+    #[test]
+    fn a_callback_without_a_sign_in_is_rejected() {
+        let connectors = connectors();
+        assert!(callback(&connectors, &redirect(PASSPORT, "abc123")).is_err());
+        assert_eq!(stored(&connectors, uni_moodle::SERVICE), None);
+    }
+
+    #[test]
+    fn logout_forgets_the_login_of_a_known_service_only() {
+        let connectors = connectors();
+        connectors
+            .secrets()
+            .set(&connectors.secret_key("cloud"), "secret")
+            .expect("set");
+
+        assert!(logout(&connectors, "nowhere").is_err());
+        assert!(stored(&connectors, "cloud").is_some());
+
+        logout(&connectors, "cloud").expect("logout");
+        assert_eq!(stored(&connectors, "cloud"), None);
+    }
+
+    #[tokio::test]
+    async fn an_incomplete_cloud_login_is_not_stored() {
+        let connectors = connectors();
+        let login = WebdavLogin {
+            user: "ab123456".into(),
+            password: String::new(),
+        };
+        assert!(store_webdav(&connectors, login).await.is_err());
+        assert_eq!(stored(&connectors, "cloud"), None);
+    }
+
+    #[tokio::test]
+    async fn a_calendar_link_to_another_host_is_not_stored() {
+        let connectors = connectors();
+        let link = "https://evil.example/ical?pToken=abc";
+        assert!(store_calendar(&connectors, link).await.is_err());
+        assert_eq!(stored(&connectors, uni_ical::SERVICE), None);
+    }
+}

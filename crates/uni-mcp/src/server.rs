@@ -280,27 +280,7 @@ fn parse<T: DeserializeOwned>(arguments: Value) -> Result<Parameters<T>, String>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use uni_core::profile::Profile;
-    use uni_core::secrets::MemoryStore;
-
-    const UNIVERSITY: &str = r#"
-        id = "test"
-        name = "Test University"
-        [moodle]
-        base_url = "https://moodle.example"
-        [webdav]
-        id = "cloud"
-        name = "Cloud"
-        files_url = "https://cloud.example/dav/{user}/"
-        [calendar]
-        host = "campus.example"
-        timezone = "Europe/Berlin"
-    "#;
-
-    fn connectors() -> Connectors {
-        let profile = Profile::parse(UNIVERSITY).expect("profile");
-        Connectors::new(profile, Arc::new(MemoryStore::default()))
-    }
+    use crate::connectors::testing::connectors;
 
     #[test]
     fn every_tool_is_declared_read_only() {
