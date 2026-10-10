@@ -9,6 +9,9 @@ type Step = {
   snippet: (executable: string) => string;
 };
 
+// The name the AI app files the server under.
+const SERVER = "unimcp";
+
 const APPS: { name: string; steps: Step[] }[] = [
   {
     name: "Claude",
@@ -18,14 +21,14 @@ const APPS: { name: string; steps: Step[] }[] = [
         hint: "Settings › Developer › Edit Config, then restart.",
         snippet: (executable) =>
           JSON.stringify(
-            { mcpServers: { uni: { command: executable, args: ["serve"] } } },
+            { mcpServers: { [SERVER]: { command: executable, args: ["serve"] } } },
             null,
             2,
           ),
       },
       {
         title: "Claude Code",
-        snippet: (executable) => `claude mcp add uni -- "${executable}" serve`,
+        snippet: (executable) => `claude mcp add ${SERVER} -- "${executable}" serve`,
       },
     ],
   },
@@ -34,7 +37,7 @@ const APPS: { name: string; steps: Step[] }[] = [
     steps: [
       {
         title: "Terminal",
-        snippet: (executable) => `codex mcp add uni -- "${executable}" serve`,
+        snippet: (executable) => `codex mcp add ${SERVER} -- "${executable}" serve`,
       },
     ],
   },
