@@ -39,7 +39,7 @@ export type DashboardState = {
   tools: Tool[];
   custom_instructions: string;
   custom_instructions_limit: number;
-  executable: string | null;
+  command: string | null;
   version: string;
   repository: string;
   browser_sign_in: boolean;

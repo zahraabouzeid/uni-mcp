@@ -75,8 +75,16 @@ yours, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Getting started
 
-Download `unimcp` for your platform from the
-[releases page](https://github.com/zahraabouzeid/uni-mcp/releases) and run it.
+Download uniMCP from the
+[releases page](https://github.com/zahraabouzeid/uni-mcp/releases):
+
+- **Windows:** `unimcp-windows-x64.msi` installs uniMCP for your user account,
+  adds a Start menu entry and makes the `unimcp` command available. No
+  administrator rights are required.
+- **Any platform:** the single `unimcp` file for your system runs without
+  installation.
+
+Then start uniMCP.
 
 The dashboard opens in your browser. From there you can connect your services,
 try out the tools, and copy the configuration for your AI assistant.

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="uniMCP" Language="1033" Version="$(var.Version)" Manufacturer="Zahraa Bou Zeid" UpgradeCode="6F0B4C1E-6C0A-4E0B-9B0C-2D1B8E7A5C41">
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perUser" InstallPrivileges="limited" Platform="x64" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of uniMCP is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="unimcp.ico" SourceFile="$(var.Icon)" />
+    <Property Id="ARPPRODUCTICON" Value="unimcp.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/zahraabouzeid/uni-mcp" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="LocalAppDataFolder">
+        <Directory Id="ProgramsFolder" Name="Programs">
+          <Directory Id="INSTALLDIR" Name="uniMCP" />
+        </Directory>
+      </Directory>
+      <Directory Id="ProgramMenuFolder" />
+    </Directory>
+
+    <DirectoryRef Id="INSTALLDIR">
+      <Component Id="Program" Guid="B3C1E0A4-5B7D-4F8E-8E55-0A8E7B1D9F02" Win64="yes">
+        <!-- A per-user component needs a registry value as its key, not the file. -->
+        <RegistryValue Root="HKCU" Key="Software\uniMCP" Name="InstallDir" Type="string" Value="[INSTALLDIR]" KeyPath="yes" />
+        <File Id="Program" Name="unimcp.exe" Source="$(var.Binary)" />
+        <Environment Id="Path" Name="PATH" Value="[INSTALLDIR]" Part="last" Action="set" System="no" Permanent="no" />
+        <RemoveFolder Id="RemoveInstallDir" Directory="INSTALLDIR" On="uninstall" />
+        <RemoveFolder Id="RemovePrograms" Directory="ProgramsFolder" On="uninstall" />
+      </Component>
+    </DirectoryRef>
+
+    <DirectoryRef Id="ProgramMenuFolder">
+      <Component Id="StartMenu" Guid="4E2D7C9A-1F36-4B58-A0C4-7D5E3B6A8F13">
+        <RegistryValue Root="HKCU" Key="Software\uniMCP" Name="StartMenu" Type="integer" Value="1" KeyPath="yes" />
+        <Shortcut Id="StartMenu" Name="uniMCP" Target="[INSTALLDIR]unimcp.exe" WorkingDirectory="INSTALLDIR" Icon="unimcp.ico" />
+      </Component>
+    </DirectoryRef>
+
+    <Feature Id="Main" Level="1">
+      <ComponentRef Id="Program" />
+      <ComponentRef Id="StartMenu" />
+    </Feature>
+  </Product>
+</Wix>
