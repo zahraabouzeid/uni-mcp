@@ -5,7 +5,7 @@ import { errorMessage } from "@/lib/api";
 import { type Person, serverApi } from "@/lib/server-api";
 import { ActionCell, Button, Cell, CodeBlock, ErrorText, Table } from "./ui";
 
-const COLUMNS = ["Name", "Role", ""];
+const COLUMNS = ["Username", "Role", ""];
 
 export function PeopleView() {
   const [people, setPeople] = useState<Person[]>([]);

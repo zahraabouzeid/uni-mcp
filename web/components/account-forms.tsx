@@ -10,7 +10,7 @@ type Props = { onDone: (person: Person) => void };
 export function LogIn({ onDone }: Props) {
   return (
     <AccountForm title="Log in" action="Log in" path="/login" onDone={onDone}>
-      <Field required label="Name" name="name" autoComplete="username" />
+      <Field required label="Username" name="name" autoComplete="username" />
       <Field
         required
         label="Password"
@@ -31,7 +31,16 @@ export function Join({ invite, onDone }: Props & { invite: string }) {
       extra={{ invite }}
       onDone={onDone}
     >
-      <Field required label="Name" name="name" autoComplete="username" maxLength={40} />
+      <Field
+        required
+        label="Username"
+        name="name"
+        autoComplete="username"
+        minLength={2}
+        maxLength={30}
+        pattern="[A-Za-z0-9._\-]+"
+        title="Letters, digits, dots, hyphens and underscores, no spaces"
+      />
       <Field
         required
         label="Password"

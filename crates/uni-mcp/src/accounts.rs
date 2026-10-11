@@ -18,7 +18,8 @@ const INVITE_VALID_SECONDS: u64 = 7 * 24 * 60 * 60;
 pub const SESSION_VALID_SECONDS: u64 = 30 * 24 * 60 * 60;
 const MIN_PASSWORD_CHARS: usize = 10;
 const MAX_PASSWORD_CHARS: usize = 200;
-const MAX_NAME_CHARS: usize = 40;
+const MIN_NAME_CHARS: usize = 2;
+const MAX_NAME_CHARS: usize = 30;
 const ATTEMPTS_BEFORE_LOCK: u32 = 5;
 const LOCKED_SECONDS: u64 = 15 * 60;
 const WRONG_LOGIN: &str = "wrong name or password";
@@ -152,9 +153,10 @@ impl Accounts {
         now: u64,
     ) -> Result<(Person, String)> {
         let name = name.trim();
-        if name.is_empty() || name.chars().count() > MAX_NAME_CHARS {
+        let allowed = |c: char| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_');
+        if !(MIN_NAME_CHARS..=MAX_NAME_CHARS).contains(&name.len()) || !name.chars().all(allowed) {
             return Err(Error::InvalidInput(format!(
-                "a name has 1 to {MAX_NAME_CHARS} characters"
+                "a username has {MIN_NAME_CHARS} to {MAX_NAME_CHARS} letters, digits, dots, hyphens or underscores, and no spaces"
             )));
         }
         let length = password.chars().count();
@@ -411,8 +413,19 @@ mod tests {
         let invite = accounts.invite(0).expect("invite");
         assert!(accounts.accept(&invite, "zahraa", PASSWORD, 0).is_err());
         assert!(accounts.accept(&invite, "Bestie", "short", 0).is_err());
-        assert!(accounts.accept(&invite, "  ", PASSWORD, 0).is_err());
-        assert!(accounts.accept(&invite, "Bestie", PASSWORD, 0).is_ok());
+        for name in ["  ", "z", "zahraa bou zeid", "zähraa", "a@b"] {
+            assert!(
+                accounts.accept(&invite, name, PASSWORD, 0).is_err(),
+                "{name}"
+            );
+        }
+        let long = "a".repeat(MAX_NAME_CHARS + 1);
+        assert!(accounts.accept(&invite, &long, PASSWORD, 0).is_err());
+        assert!(
+            accounts
+                .accept(&invite, "best.friend_2-go", PASSWORD, 0)
+                .is_ok()
+        );
         fs::remove_dir_all(folder).expect("clean up");
     }
 

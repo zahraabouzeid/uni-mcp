@@ -59,7 +59,7 @@ test("accepting an invite sends it with the chosen name and password", async () 
   const user = userEvent.setup();
   render(<Join invite="c0de" onDone={onDone} />);
 
-  await user.type(screen.getByLabelText("Name"), "Bestie");
+  await user.type(screen.getByLabelText("Username"), "Bestie");
   await user.type(screen.getByLabelText("Password"), "correct horse battery");
   await user.click(screen.getByRole("button", { name: "Create account" }));
 
@@ -77,7 +77,7 @@ test("a refused login shows why and stays on the form", async () => {
   const user = userEvent.setup();
   render(<LogIn onDone={onDone} />);
 
-  await user.type(screen.getByLabelText("Name"), "Zahraa");
+  await user.type(screen.getByLabelText("Username"), "Zahraa");
   await user.type(screen.getByLabelText("Password"), "not the password");
   await user.click(screen.getByRole("button", { name: "Log in" }));
 
