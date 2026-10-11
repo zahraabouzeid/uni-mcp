@@ -29,6 +29,7 @@ use crate::accounts::{self, Accounts};
 use crate::autostart::Launch;
 use crate::connectors::{Connectors, ServiceKind};
 use crate::hosting;
+use crate::store::Database;
 use crate::vault::Vault;
 
 const INSTRUCTIONS: &str = "Read-only access to the student's university services: courses and \
@@ -354,7 +355,7 @@ pub async fn serve_http<F>(
     port: u16,
     connectors: Option<F>,
     custom_instructions: Option<String>,
-    accounts: Accounts,
+    database: Arc<Database>,
     data: &std::path::Path,
 ) -> Result<(), String>
 where
@@ -368,7 +369,11 @@ where
     if connectors.is_some() {
         println!("MCP server: http://{address}{HTTP_PATH}");
     }
-    if accounts.waits_for_its_owner(accounts::now()) {
+    let accounts = Accounts::new(database.clone());
+    if accounts
+        .waits_for_its_owner(accounts::now())
+        .map_err(text)?
+    {
         let invite = accounts.invite(accounts::now()).map_err(text)?;
         println!("No account yet. Create the owner's within a week at:");
         println!("{}", owner_link(address.port(), &invite));
@@ -376,14 +381,12 @@ where
     println!("Press Ctrl+C to stop.");
 
     let launch = Launch::of_this_server(address.port(), data).map_err(text)?;
-    let vault = Arc::new(Vault::open(data).map_err(text)?);
-    let router = http_router(
-        connectors,
-        custom_instructions,
-        Arc::new(accounts),
-        vault,
-        launch,
-    );
+    let home = Home {
+        vault: Arc::new(Vault::open(data, database.clone()).map_err(text)?),
+        accounts: Arc::new(accounts),
+        database,
+    };
+    let router = http_router(connectors, custom_instructions, home, launch);
     tokio::select! {
         served = axum::serve(listener, router) => served.map_err(text),
         _ = tokio::signal::ctrl_c() => {
@@ -393,12 +396,18 @@ where
     }
 }
 
+/// What a home server keeps: who is on it, and what belongs to them.
+struct Home {
+    database: Arc<Database>,
+    accounts: Arc<Accounts>,
+    vault: Arc<Vault>,
+}
+
 /// Every session gets its own server, so a new login takes effect in the next one.
 fn http_router<F>(
     connectors: Option<F>,
     custom_instructions: Option<String>,
-    accounts: Arc<Accounts>,
-    vault: Arc<Vault>,
+    home: Home,
     launch: Launch,
 ) -> Router
 where
@@ -407,8 +416,11 @@ where
     let router = Router::new()
         .nest(
             "/api",
-            hosting::api(accounts.clone(), vault.clone(), launch)
-                .merge(crate::dashboard::hosted_api(accounts, vault)),
+            hosting::api(home.accounts.clone(), launch).merge(crate::dashboard::hosted_api(
+                home.accounts,
+                home.vault,
+                home.database,
+            )),
         )
         .route("/", get(|| async { Redirect::to(SERVER_PAGE) }))
         .fallback(crate::dashboard::page);
@@ -722,32 +734,28 @@ mod tests {
                 .expect("request")
         };
 
-        let (accounts, folder) = crate::accounts::testing::accounts("mcp-over-http");
-        let accounts = Arc::new(accounts);
+        let (database, folder) = crate::store::testing::database("mcp-over-http");
+        let home = || Home {
+            accounts: Arc::new(Accounts::new(database.clone())),
+            vault: Arc::new(Vault::open(&folder, database.clone()).expect("vault")),
+            database: database.clone(),
+        };
         let launch = crate::autostart::testing::launch;
-        let (vault, vault_folder) = crate::vault::testing::vault("mcp-over-http");
-        let vault = Arc::new(vault);
-        let answer = http_router(
-            Some(connectors),
-            None,
-            accounts.clone(),
-            vault.clone(),
-            launch(),
-        )
-        .oneshot(request("localhost"))
-        .await
-        .expect("response");
+        let answer = http_router(Some(connectors), None, home(), launch())
+            .oneshot(request("localhost"))
+            .await
+            .expect("response");
         assert_eq!(answer.status(), StatusCode::OK);
         assert!(answer.headers().contains_key("mcp-session-id"));
 
         // A page on another site that resolves to this computer is turned away.
-        let foreign = http_router(Some(connectors), None, accounts, vault, launch())
+        let foreign = http_router(Some(connectors), None, home(), launch())
             .oneshot(request("evil.example"))
             .await
             .expect("response");
         assert_ne!(foreign.status(), StatusCode::OK);
+        drop(database);
         std::fs::remove_dir_all(folder).expect("clean up");
-        std::fs::remove_dir_all(vault_folder).expect("clean up");
     }
 
     #[test]

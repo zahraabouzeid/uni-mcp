@@ -13,6 +13,7 @@ mod login;
 mod prompts;
 mod scheme;
 mod server;
+mod store;
 mod vault;
 
 use std::io::IsTerminal;
@@ -181,13 +182,14 @@ async fn run_server(
             )
         })
         .ok_or("this system has no folder for program data; pass --data")?;
-    let accounts = accounts::Accounts::open(&folder).map_err(text)?;
+    let database = store::Database::open(&folder).map_err(text)?;
+    let accounts = accounts::Accounts::new(database.clone());
 
     match autostart {
         Some(Switch::On) => {
             // The background server has no terminal to show the link in.
             let now = accounts::now();
-            if accounts.waits_for_its_owner(now) {
+            if accounts.waits_for_its_owner(now).map_err(text)? {
                 let invite = accounts.invite(now).map_err(text)?;
                 println!("Create the owner's account within a week at:");
                 println!("{}", server::owner_link(port, &invite));
@@ -224,5 +226,6 @@ async fn run_server(
     let custom_instructions = config::load()
         .map(|config| config.custom_instructions)
         .unwrap_or_default();
-    server::serve_http(port, connectors, custom_instructions, accounts, &folder).await
+    drop(accounts);
+    server::serve_http(port, connectors, custom_instructions, database, &folder).await
 }

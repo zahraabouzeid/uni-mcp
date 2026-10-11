@@ -29,6 +29,7 @@ use crate::apps::{self, App as McpClient};
 use crate::connectors::{Connectors, ServiceKind, ServiceState, WebdavLogin};
 use crate::login::{self, Progress};
 use crate::server::Needs;
+use crate::store::Database;
 use crate::vault::Vault;
 use crate::{config, hosting, launch, scheme, server};
 
@@ -288,6 +289,7 @@ fn api() -> Router {
 struct Hosted {
     accounts: Arc<Accounts>,
     vault: Arc<Vault>,
+    database: Arc<Database>,
     checks: Arc<Mutex<HashMap<String, Arc<Mutex<Checks>>>>>,
 }
 
@@ -300,10 +302,13 @@ impl Hosted {
             .entry(account.to_owned())
             .or_default()
             .clone();
-        let settings = self.vault.folder_of(account).join(config::Settings::FILE);
+        let settings = config::Settings::Account {
+            database: self.database.clone(),
+            account: account.to_owned(),
+        };
         App {
             secrets: Arc::new(self.vault.secrets_of(account)),
-            settings: Arc::new(config::Settings::at(settings)),
+            settings: Arc::new(settings),
             hosted: true,
             key: "".into(),
             started: Instant::now(),
@@ -315,10 +320,11 @@ impl Hosted {
 }
 
 /// The dashboard API for whoever is logged in to the server.
-pub fn hosted_api(accounts: Arc<Accounts>, vault: Arc<Vault>) -> Router {
+pub fn hosted_api(accounts: Arc<Accounts>, vault: Arc<Vault>, database: Arc<Database>) -> Router {
     let hosted = Hosted {
         accounts,
         vault,
+        database,
         checks: Arc::default(),
     };
     api().layer(middleware::from_fn_with_state(hosted, require_account))
@@ -678,7 +684,7 @@ mod tests {
         let settings = std::env::temp_dir().join("unimcp-dashboard-test-settings.toml");
         App {
             secrets: Arc::new(MemoryStore::default()),
-            settings: Arc::new(config::Settings::at(settings)),
+            settings: Arc::new(config::Settings::File(settings)),
             hosted: false,
             key: KEY.into(),
             started: Instant::now(),
@@ -775,11 +781,11 @@ mod tests {
 
     #[tokio::test]
     async fn each_account_has_a_dashboard_of_its_own() {
-        use crate::accounts::testing::{PASSWORD, accounts};
-        use crate::vault::testing::vault;
+        use crate::accounts::testing::PASSWORD;
 
-        let (accounts, folder) = accounts("dashboards");
-        let (vault, vault_folder) = vault("dashboards");
+        let (database, folder) = crate::store::testing::database("dashboards");
+        let accounts = Accounts::new(database.clone());
+        let vault = Vault::open(&folder, database.clone()).expect("vault");
         // Sessions are checked against the real time here.
         let join = |name: &str| {
             let now = crate::accounts::now();
@@ -790,7 +796,7 @@ mod tests {
                 .1
         };
         let (admin, mine, hers) = (join("Admin"), join("Zahraa"), join("Bestie"));
-        let api = hosted_api(Arc::new(accounts), Arc::new(vault));
+        let api = hosted_api(Arc::new(accounts), Arc::new(vault), database);
 
         let call = |session: Option<&str>, method: &str, path: &str, body: Value| {
             let mut request = Request::builder()
@@ -836,8 +842,8 @@ mod tests {
         let (status, _) = call(Some(&mine), "POST", "/apps/add", add).await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
 
+        drop(api);
         std::fs::remove_dir_all(folder).expect("clean up");
-        std::fs::remove_dir_all(vault_folder).expect("clean up");
     }
 
     #[tokio::test]
