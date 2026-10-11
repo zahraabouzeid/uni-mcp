@@ -3,14 +3,17 @@
 import { useEffect, useState } from "react";
 import { Join, LogIn } from "@/components/account-forms";
 import { PeopleView } from "@/components/people-view";
+import { ServerView } from "@/components/server-view";
 import { Button } from "@/components/ui";
 import { type Person, serverApi } from "@/lib/server-api";
 
 const NEUTRAL = "#1f1f23";
+const VIEWS = ["People", "Server"] as const;
 
 export default function Server() {
   // `undefined` until the server has said whether this browser is logged in.
   const [person, setPerson] = useState<Person | null | undefined>(undefined);
+  const [view, setView] = useState<(typeof VIEWS)[number]>("People");
   const [invite, setInvite] = useState(() =>
     typeof window === "undefined"
       ? null
@@ -58,12 +61,21 @@ export default function Server() {
 
         {person.owner && (
           <nav className="mt-4 grid gap-0.5 px-3">
-            <span
-              aria-current="page"
-              className="flex h-8 items-center rounded-md bg-white/15 px-2 font-medium"
-            >
-              People
-            </span>
+            {VIEWS.map((name) => (
+              <button
+                key={name}
+                type="button"
+                aria-current={view === name ? "page" : undefined}
+                onClick={() => setView(name)}
+                className={`flex h-8 items-center rounded-md px-2 text-left ${
+                  view === name
+                    ? "bg-white/15 font-medium"
+                    : "text-white/75 hover:bg-white/10 hover:text-white"
+                }`}
+              >
+                {name}
+              </button>
+            ))}
           </nav>
         )}
 
@@ -75,10 +87,12 @@ export default function Server() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 shrink-0 items-center border-b border-line px-10">
-          <h1 className="text-lg font-semibold">{person.owner ? "People" : person.name}</h1>
+          <h1 className="text-lg font-semibold">{person.owner ? view : person.name}</h1>
         </header>
         <main className="flex-1 overflow-auto px-10 py-8">
-          <div className="max-w-4xl">{person.owner && <PeopleView />}</div>
+          <div className="max-w-4xl">
+            {person.owner && (view === "People" ? <PeopleView /> : <ServerView />)}
+          </div>
         </main>
       </div>
     </div>

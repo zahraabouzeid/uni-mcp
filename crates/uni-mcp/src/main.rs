@@ -3,6 +3,7 @@
 
 mod accounts;
 mod apps;
+mod autostart;
 mod config;
 mod connectors;
 mod dashboard;
@@ -54,6 +55,9 @@ enum Command {
         /// Folder for the accounts of the server. Defaults to one in your user folder.
         #[arg(long)]
         data: Option<PathBuf>,
+        /// Start the server with this computer from now on, or stop doing so.
+        #[arg(long, value_name = "on|off")]
+        autostart: Option<Switch>,
     },
     /// Log in to a service, e.g. `unimcp login moodle`. `unimcp status` lists them.
     Login { service: String },
@@ -64,6 +68,12 @@ enum Command {
     Logout { service: String },
     /// Show which services are configured and logged in.
     Status,
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum Switch {
+    On,
+    Off,
 }
 
 #[tokio::main]
@@ -122,7 +132,11 @@ async fn run(cli: Cli) -> Result<(), String> {
     match command {
         Command::Dashboard { .. } => Ok(()),
         Command::Serve => server::serve(connectors, custom_instructions()).await,
-        Command::Server { port, data } => {
+        Command::Server {
+            port,
+            data,
+            autostart,
+        } => {
             let folder = data
                 .or_else(|| {
                     Some(
@@ -132,9 +146,27 @@ async fn run(cli: Cli) -> Result<(), String> {
                     )
                 })
                 .ok_or("this system has no folder for program data; pass --data")?;
+            match autostart {
+                Some(Switch::On) => {
+                    let launch = autostart::Launch::of_this_server(port, &folder)
+                        .map_err(|e| e.to_string())?;
+                    let note = autostart::turn_on(&launch).map_err(|e| e.to_string())?;
+                    println!("The server now starts with this computer.");
+                    if let Some(note) = note {
+                        println!("{note}");
+                    }
+                    return Ok(());
+                }
+                Some(Switch::Off) => {
+                    autostart::turn_off().map_err(|e| e.to_string())?;
+                    println!("The server no longer starts with this computer.");
+                    return Ok(());
+                }
+                None => {}
+            }
             let accounts = accounts::Accounts::open(&folder).map_err(|e| e.to_string())?;
             let connectors = move || Connectors::new(profile.clone(), secrets.clone());
-            server::serve_http(port, connectors, custom_instructions(), accounts).await
+            server::serve_http(port, connectors, custom_instructions(), accounts, &folder).await
         }
         Command::Login { service } => login::login(&connectors, &service)
             .await

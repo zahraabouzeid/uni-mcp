@@ -26,6 +26,7 @@ use uni_core::document::{Request, View};
 use uni_core::model::{Document, Image};
 
 use crate::accounts::{self, Accounts};
+use crate::autostart::Launch;
 use crate::connectors::{Connectors, ServiceKind};
 use crate::hosting;
 
@@ -346,6 +347,7 @@ pub async fn serve_http(
     connectors: impl Fn() -> Connectors + Send + Sync + 'static,
     custom_instructions: Option<String>,
     accounts: Accounts,
+    data: &std::path::Path,
 ) -> Result<(), String> {
     let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, port))
         .await
@@ -359,7 +361,8 @@ pub async fn serve_http(
     }
     println!("Press Ctrl+C to stop.");
 
-    let router = http_router(connectors, custom_instructions, Arc::new(accounts));
+    let launch = Launch::of_this_server(address.port(), data).map_err(text)?;
+    let router = http_router(connectors, custom_instructions, Arc::new(accounts), launch);
     tokio::select! {
         served = axum::serve(listener, router) => served.map_err(text),
         _ = tokio::signal::ctrl_c() => {
@@ -374,6 +377,7 @@ fn http_router(
     connectors: impl Fn() -> Connectors + Send + Sync + 'static,
     custom_instructions: Option<String>,
     accounts: Arc<Accounts>,
+    launch: Launch,
 ) -> Router {
     let service = StreamableHttpService::new(
         move || {
@@ -384,7 +388,7 @@ fn http_router(
     );
     Router::new()
         .nest_service(HTTP_PATH, service)
-        .nest("/api", hosting::api(accounts))
+        .nest("/api", hosting::api(accounts, launch))
         .route("/", get(|| async { Redirect::to(SERVER_PAGE) }))
         .fallback(crate::dashboard::page)
 }
@@ -688,7 +692,8 @@ mod tests {
 
         let (accounts, folder) = crate::accounts::testing::accounts("mcp-over-http");
         let accounts = Arc::new(accounts);
-        let answer = http_router(connectors, None, accounts.clone())
+        let launch = crate::autostart::testing::launch;
+        let answer = http_router(connectors, None, accounts.clone(), launch())
             .oneshot(request("localhost"))
             .await
             .expect("response");
@@ -696,7 +701,7 @@ mod tests {
         assert!(answer.headers().contains_key("mcp-session-id"));
 
         // A page on another site that resolves to this computer is turned away.
-        let foreign = http_router(connectors, None, accounts)
+        let foreign = http_router(connectors, None, accounts, launch())
             .oneshot(request("evil.example"))
             .await
             .expect("response");

@@ -14,6 +14,7 @@ use serde_json::{Value, json};
 use uni_core::Error;
 
 use crate::accounts::{self, Accounts, Person, SESSION_VALID_SECONDS};
+use crate::autostart::{self, Launch};
 
 const COOKIE_NAME: &str = "unimcp_session";
 
@@ -33,7 +34,11 @@ impl IntoResponse for Refusal {
 
 type Answer = Result<Response, Refusal>;
 
-pub fn api(accounts: Arc<Accounts>) -> Router {
+pub fn api(accounts: Arc<Accounts>, launch: Launch) -> Router {
+    let settings = Router::new()
+        .route("/server", get(server_settings))
+        .route("/server/autostart", post(set_autostart))
+        .with_state((accounts.clone(), Arc::new(launch)));
     Router::new()
         .route("/accept", post(accept))
         .route("/login", post(log_in))
@@ -43,6 +48,39 @@ pub fn api(accounts: Arc<Accounts>) -> Router {
         .route("/people/remove", post(remove))
         .route("/invites", post(invite))
         .with_state(accounts)
+        .merge(settings)
+}
+
+type Settings = State<(Arc<Accounts>, Arc<Launch>)>;
+
+fn autostart_state(note: Option<String>) -> Response {
+    Json(json!({
+        "autostart": { "on": autostart::is_on(), "moment": autostart::MOMENT, "note": note },
+    }))
+    .into_response()
+}
+
+async fn server_settings(State((accounts, _)): Settings, headers: HeaderMap) -> Answer {
+    owner(&accounts, &headers)?;
+    Ok(autostart_state(None))
+}
+
+#[derive(Deserialize)]
+struct Switch {
+    on: bool,
+}
+
+async fn set_autostart(
+    State((accounts, launch)): Settings,
+    headers: HeaderMap,
+    Json(switch): Json<Switch>,
+) -> Answer {
+    owner(&accounts, &headers)?;
+    let note = match switch.on {
+        true => autostart::turn_on(&launch)?,
+        false => autostart::turn_off().map(|()| None)?,
+    };
+    Ok(autostart_state(note))
 }
 
 fn session_of(headers: &HeaderMap) -> Option<&str> {
@@ -182,7 +220,7 @@ mod tests {
             request = request.header(COOKIE, format!("other=1; {COOKIE_NAME}={session}"));
         }
         let request = request.body(Body::from(body.to_string())).expect("request");
-        let response = api(accounts.clone())
+        let response = api(accounts.clone(), crate::autostart::testing::launch())
             .oneshot(request)
             .await
             .expect("response");
@@ -246,6 +284,42 @@ mod tests {
         let (status, cookie, _) = call(&accounts, "POST", "/login", None, login).await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert!(cookie.is_none());
+        std::fs::remove_dir_all(folder).expect("clean up");
+    }
+
+    // Only reads the setting: switching it would change this computer.
+    #[tokio::test]
+    async fn only_the_owner_sees_the_server_settings() {
+        let (accounts, folder) = accounts("api-settings");
+        let accounts = Arc::new(accounts);
+        let now = accounts::now();
+        let first = accounts.invite(now).expect("invite");
+        let (_, owner) = accounts
+            .accept(&first, "Zahraa", PASSWORD, now)
+            .expect("owner");
+        let second = accounts.invite(now).expect("invite");
+        let (_, guest) = accounts
+            .accept(&second, "Bestie", PASSWORD, now)
+            .expect("guest");
+
+        let (status, _, body) = call(&accounts, "GET", "/server", Some(&owner), json!({})).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body["autostart"]["on"].is_boolean());
+
+        let (status, _, _) = call(&accounts, "GET", "/server", Some(&guest), json!({})).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let switch = json!({ "on": true });
+        let (status, _, _) = call(
+            &accounts,
+            "POST",
+            "/server/autostart",
+            Some(&guest),
+            switch.clone(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let (status, _, _) = call(&accounts, "POST", "/server/autostart", None, switch).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
         std::fs::remove_dir_all(folder).expect("clean up");
     }
 

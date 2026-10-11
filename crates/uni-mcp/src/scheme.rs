@@ -32,7 +32,7 @@ pub fn register(profile_id: &str) -> io::Result<()> {
 }
 
 #[cfg(windows)]
-fn headless_console_host() -> Option<std::path::PathBuf> {
+pub(crate) fn headless_console_host() -> Option<std::path::PathBuf> {
     let conhost = std::path::Path::new(&std::env::var_os("SystemRoot")?)
         .join("System32")
         .join("conhost.exe");
