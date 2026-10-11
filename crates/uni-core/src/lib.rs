@@ -10,5 +10,5 @@ mod office;
 pub mod profile;
 pub mod secrets;
 
-pub use capability::{Calendar, Courses, Files};
+pub use capability::{Calendar, Canteens, Courses, Files};
 pub use error::{Error, Result};

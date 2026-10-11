@@ -38,6 +38,11 @@ test("a tool whose service is not connected cannot be tried", () => {
   expect(screen.getByRole("button", { name: "Try" })).toHaveProperty("disabled", true);
 });
 
+test("a tool the university does not offer says so instead of asking to connect", () => {
+  show({ available: false, service: null });
+  expect(screen.getByRole("button", { name: "Try" }).title).toBe("Not offered by this university");
+});
+
 test("a tool without parameters runs as soon as it is opened", async () => {
   vi.mocked(api).mockResolvedValue({ ok: true, output: '{"courses": []}', images: [] });
   const user = show();

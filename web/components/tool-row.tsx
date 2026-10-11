@@ -10,6 +10,7 @@ export function ToolRow({ tool }: { tool: Tool }) {
   const [open, setOpen] = useState(false);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<ToolRun | null>(null);
+  const missing = tool.service ? `Connect ${tool.service} first` : "Not offered by this university";
 
   async function run(args: Record<string, string>) {
     setRunning(true);
@@ -49,7 +50,7 @@ export function ToolRow({ tool }: { tool: Tool }) {
           <Button
             onClick={toggle}
             disabled={!tool.available}
-            title={tool.available ? undefined : `Connect ${tool.service} first`}
+            title={tool.available ? undefined : missing}
           >
             {open ? "Close" : "Try"}
           </Button>

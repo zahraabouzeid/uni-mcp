@@ -13,9 +13,12 @@ pub struct Profile {
     pub name: String,
     /// `#rrggbb`, dark enough to sit behind white text.
     pub color: Option<String>,
+    /// IANA name, e.g. `Europe/Berlin`.
+    pub timezone: String,
     pub moodle: Option<MoodleProfile>,
     pub webdav: Option<WebdavProfile>,
     pub calendar: Option<CalendarProfile>,
+    pub canteens: Option<CanteensProfile>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -39,8 +42,22 @@ pub struct WebdavProfile {
 pub struct CalendarProfile {
     /// The only host a student's iCal link may point to.
     pub host: String,
-    /// IANA name, e.g. `Europe/Berlin`.
-    pub timezone: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CanteensProfile {
+    /// Base address of an OpenMensa API.
+    pub api: String,
+    pub list: Vec<CanteenEntry>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CanteenEntry {
+    /// The canteen's number in the OpenMensa API.
+    pub id: u64,
+    pub name: String,
 }
 
 impl Profile {
@@ -58,8 +75,9 @@ impl Profile {
         let urls = [
             profile.moodle.as_ref().map(|m| &m.base_url),
             profile.webdav.as_ref().map(|w| &w.files_url),
+            profile.canteens.as_ref().map(|c| &c.api),
         ];
-        // Credentials are sent to these URLs.
+        // Credentials are sent to most of these URLs.
         if let Some(url) = urls
             .into_iter()
             .flatten()
@@ -97,6 +115,8 @@ impl Profile {
 mod tests {
     use super::*;
 
+    const MINIMAL: &str = "id = \"x\"\nname = \"X\"\ntimezone = \"Europe/Berlin\"\n";
+
     #[test]
     fn every_builtin_profile_parses_and_ids_are_unique() {
         let profiles = Profile::builtin_all().expect("profiles");
@@ -117,13 +137,13 @@ mod tests {
 
     #[test]
     fn colour_must_be_hex() {
-        assert!(Profile::parse("id = \"x\"\nname = \"X\"\ncolor = \"#00549f\"\n").is_ok());
-        assert!(Profile::parse("id = \"x\"\nname = \"X\"\ncolor = \"blue\"\n").is_err());
+        assert!(Profile::parse(&format!("{MINIMAL}color = \"#00549f\"\n")).is_ok());
+        assert!(Profile::parse(&format!("{MINIMAL}color = \"blue\"\n")).is_err());
     }
 
     #[test]
     fn plain_http_is_rejected() {
-        let source = "id = \"x\"\nname = \"X\"\n[moodle]\nbase_url = \"http://moodle.example\"\n";
-        assert!(Profile::parse(source).is_err());
+        let source = format!("{MINIMAL}[moodle]\nbase_url = \"http://moodle.example\"\n");
+        assert!(Profile::parse(&source).is_err());
     }
 }

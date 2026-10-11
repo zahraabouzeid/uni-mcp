@@ -63,6 +63,26 @@ pub struct Event {
     pub url: Option<String>,
 }
 
+/// What one canteen serves on one day. No meals means closed or not published.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CanteenMenu {
+    pub canteen: String,
+    pub date: String,
+    pub weekday: String,
+    pub meals: Vec<Meal>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Meal {
+    pub name: String,
+    pub category: String,
+    /// In the local currency.
+    pub student_price: Option<f64>,
+    pub guest_price: Option<f64>,
+    /// Allergens, additives and labels such as `vegan`.
+    pub notes: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileEntry {
     /// Relative to the root of the file store, `/`-separated.

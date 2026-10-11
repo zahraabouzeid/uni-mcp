@@ -4,9 +4,10 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use uni_core::profile::{CalendarProfile, MoodleProfile, Profile, WebdavProfile};
 use uni_core::secrets::{self, SecretStore};
-use uni_core::{Calendar, Courses, Error, Files, Result};
+use uni_core::{Calendar, Canteens, Courses, Error, Files, Result};
 use uni_ical::IcalClient;
 use uni_moodle::MoodleClient;
+use uni_openmensa::OpenMensaClient;
 use uni_webdav::WebdavClient;
 
 #[derive(Serialize, Deserialize)]
@@ -131,8 +132,25 @@ impl Connectors {
         Ok(Arc::new(IcalClient::new(
             self.http.clone(),
             &calendar.host,
-            &calendar.timezone,
+            &self.profile.timezone,
             link,
+        )?))
+    }
+
+    pub fn offers_canteens(&self) -> bool {
+        self.profile.canteens.is_some()
+    }
+
+    pub fn canteens(&self) -> Result<Arc<dyn Canteens>> {
+        let canteens = self
+            .profile
+            .canteens
+            .as_ref()
+            .ok_or_else(|| self.not_offered("canteen menus"))?;
+        Ok(Arc::new(OpenMensaClient::new(
+            self.http.clone(),
+            canteens,
+            &self.profile.timezone,
         )?))
     }
 
@@ -209,6 +227,7 @@ pub mod testing {
     const UNIVERSITY: &str = r#"
         id = "test"
         name = "Test University"
+        timezone = "Europe/Berlin"
         [moodle]
         base_url = "https://moodle.example"
         [webdav]
@@ -217,10 +236,10 @@ pub mod testing {
         files_url = "https://cloud.example/dav/{user}/"
         [calendar]
         host = "campus.example"
-        timezone = "Europe/Berlin"
     "#;
 
-    /// A made-up university with every service and an empty keyring.
+    /// A made-up university with every service that takes a login, and an
+    /// empty keyring. It has no canteens, so no test reaches the network.
     pub fn connectors() -> Connectors {
         let profile = Profile::parse(UNIVERSITY).expect("profile");
         Connectors::new(profile, Arc::new(MemoryStore::default()))
@@ -269,6 +288,14 @@ mod tests {
         assert!(status.contains("moodle: logged in"));
         assert!(status.contains("cloud: not logged in"));
         assert!(!status.contains("t0ken"));
+    }
+
+    #[test]
+    fn a_university_without_canteens_says_so() {
+        let connectors = connectors();
+        assert!(!connectors.offers_canteens());
+        let error = connectors.canteens().err().expect("not offered");
+        assert!(error.to_string().contains("canteen menus"));
     }
 
     #[test]
