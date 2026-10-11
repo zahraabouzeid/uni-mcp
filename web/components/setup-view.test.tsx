@@ -34,6 +34,10 @@ test("every app is given the program under the name uniMCP", async () => {
   await user.click(screen.getByRole("tab", { name: "Codex" }));
   expect(screen.getByText('codex mcp add uniMCP -- "C:\\apps\\unimcp.exe" serve')).toBeTruthy();
 
+  await user.click(screen.getByRole("tab", { name: "Gemini CLI" }));
+  expect(screen.getByText(/"uniMCP": \{/)).toBeTruthy();
+  expect(screen.getByText(/\.gemini folder/)).toBeTruthy();
+
   await user.click(screen.getByRole("tab", { name: "Other" }));
   expect(screen.getByText('"C:\\apps\\unimcp.exe" serve')).toBeTruthy();
 });

@@ -16,6 +16,9 @@ const SERVER = "uniMCP";
 // A bare name, as after the installer, needs no quotes; a path may hold spaces.
 const forShell = (command: string) => (/[\s\\/]/.test(command) ? `"${command}"` : command);
 
+const asJson = (command: string) =>
+  JSON.stringify({ mcpServers: { [SERVER]: { command, args: ["serve"] } } }, null, 2);
+
 const APPS: { name: string; id?: AppTarget["id"]; steps: Step[] }[] = [
   {
     name: "Claude Desktop",
@@ -24,8 +27,7 @@ const APPS: { name: string; id?: AppTarget["id"]; steps: Step[] }[] = [
       {
         title: "Config file",
         hint: "Settings > Developer > Edit Config, then restart.",
-        snippet: (command) =>
-          JSON.stringify({ mcpServers: { [SERVER]: { command, args: ["serve"] } } }, null, 2),
+        snippet: asJson,
       },
     ],
   },
@@ -46,6 +48,17 @@ const APPS: { name: string; id?: AppTarget["id"]; steps: Step[] }[] = [
       {
         title: "Terminal",
         snippet: (command) => `codex mcp add ${SERVER} -- ${forShell(command)} serve`,
+      },
+    ],
+  },
+  {
+    name: "Gemini CLI",
+    id: "gemini-cli",
+    steps: [
+      {
+        title: "Config file",
+        hint: "settings.json in the .gemini folder of your home folder.",
+        snippet: asJson,
       },
     ],
   },
