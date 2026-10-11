@@ -81,6 +81,9 @@ Download `unimcp` for your system from the
 It opens the dashboard in your browser, where you connect your services, try
 the tools, and get the line that adds it to your AI app.
 
+Under **Custom prompt** you can write what every AI app should know, such as where
+you keep your examination regulations or which language to answer in.
+
 Browser sign-in for Moodle works on Windows only for now; elsewhere
 `unimcp login moodle` asks you to paste a link.
 
