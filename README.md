@@ -87,8 +87,8 @@ Download uniMCP from the
 Then start uniMCP.
 
 The dashboard opens in your browser. From there you can connect your services,
-try out the tools, and add uniMCP to Claude Desktop, Claude Code or Codex with
-one click. The configuration for any other AI assistant is there to copy.
+try out the tools, and add uniMCP to Claude Desktop, Claude Code, Codex or Gemini CLI
+with one click. The configuration for any other AI assistant is there to copy.
 
 Under **Settings** you can add custom instructions, for example your degree
 programme or where you keep your examination regulations.
