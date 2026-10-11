@@ -63,7 +63,7 @@ jobs:
 
   build:
     name: Build (${{ matrix.asset }})
-    needs: web
+    needs: [version, web]
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -71,6 +71,7 @@ jobs:
           - os: windows-latest
             binary: unimcp.exe
             asset: unimcp-windows-x64.exe
+            installer: unimcp-windows-x64.msi
           - os: ubuntu-latest
             binary: unimcp
             asset: unimcp-linux-x64
@@ -92,6 +93,26 @@ jobs:
         with:
           name: ${{ matrix.asset }}
           path: ${{ matrix.asset }}
+      - name: Installer
+        if: matrix.installer
+        shell: pwsh
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
+          WIX_URL: https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip
+          WIX_SHA256: 6AC824E1642D6F7277D0ED7EA09411A508F6116BA6FAE0AA5F2C7DAA2FF43D31
+        run: |
+          curl.exe --fail --silent --show-error --location --output wix.zip $env:WIX_URL
+          if ((Get-FileHash wix.zip -Algorithm SHA256).Hash -ne $env:WIX_SHA256) { throw "unexpected WiX download" }
+          Expand-Archive wix.zip wix
+          wix\candle.exe -nologo -arch x64 "-dVersion=$($env:TAG.TrimStart('v'))" "-dBinary=target\release\${{ matrix.binary }}" "-dIcon=crates\uni-mcp\assets\unimcp.ico" -out installer.wixobj crates\uni-mcp\wix\main.wxs
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          wix\light.exe -nologo -sw1076 -out ${{ matrix.installer }} installer.wixobj
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        if: matrix.installer
+        with:
+          name: ${{ matrix.installer }}
+          path: ${{ matrix.installer }}
 
   publish:
     name: Publish
