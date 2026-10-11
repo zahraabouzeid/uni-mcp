@@ -137,6 +137,16 @@ impl Connectors {
         )?))
     }
 
+    /// Asks the service for something small, to see whether it still accepts
+    /// the stored login.
+    pub async fn verify(&self, kind: ServiceKind) -> Result<()> {
+        match kind {
+            ServiceKind::Moodle => self.courses()?.list_courses().await.map(drop),
+            ServiceKind::Webdav => self.files()?.list("").await.map(drop),
+            ServiceKind::Calendar => self.calendar()?.events(None, None, None).await.map(drop),
+        }
+    }
+
     pub fn offers_canteens(&self) -> bool {
         self.profile.canteens.is_some()
     }

@@ -5,6 +5,8 @@ export type Service = {
   name: string;
   kind: "moodle" | "webdav" | "calendar";
   logged_in: boolean;
+  checking: boolean;
+  expired: boolean;
   error: string | null;
 };
 

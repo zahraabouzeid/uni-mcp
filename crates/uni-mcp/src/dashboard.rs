@@ -2,9 +2,10 @@
 //! The page itself is public; every API request needs the random key from the
 //! address printed at start, which other websites and users cannot know.
 
+use std::collections::HashMap;
 use std::net::Ipv4Addr;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use axum::extract::{Request, State};
@@ -23,7 +24,7 @@ use uni_core::Error;
 use uni_core::profile::Profile;
 use uni_core::secrets::SecretStore;
 
-use crate::connectors::{Connectors, WebdavLogin};
+use crate::connectors::{Connectors, ServiceKind, ServiceState, WebdavLogin};
 use crate::login::{self, Progress};
 use crate::server::Needs;
 use crate::{config, scheme, server};
@@ -58,9 +59,78 @@ struct App {
     /// Seconds after `started` of the latest request; zero until the first.
     last_seen: Arc<AtomicU64>,
     closing: Arc<AtomicBool>,
+    checks: Arc<Mutex<Checks>>,
+}
+
+/// Whether a service still accepts the login that is stored for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Check {
+    Running,
+    Accepted,
+    Rejected,
+}
+
+/// One check per stored login for as long as the dashboard runs. A login that
+/// changes starts a new round, so an answer about the old one is dropped.
+#[derive(Default)]
+struct Checks {
+    round: u64,
+    by_secret: HashMap<String, Check>,
+}
+
+impl Checks {
+    /// The state of a check, and the round to start one in if there is none yet.
+    fn look_up(&mut self, secret_key: &str) -> (Check, Option<u64>) {
+        match self.by_secret.get(secret_key) {
+            Some(check) => (*check, None),
+            None => {
+                self.by_secret.insert(secret_key.to_owned(), Check::Running);
+                (Check::Running, Some(self.round))
+            }
+        }
+    }
+
+    fn finish(&mut self, round: u64, secret_key: String, accepted: bool) {
+        if round == self.round {
+            let check = if accepted {
+                Check::Accepted
+            } else {
+                Check::Rejected
+            };
+            self.by_secret.insert(secret_key, check);
+        }
+    }
+
+    fn forget(&mut self) {
+        self.round += 1;
+        self.by_secret.clear();
+    }
 }
 
 impl App {
+    fn checks(&self) -> std::sync::MutexGuard<'_, Checks> {
+        self.checks.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Looks up whether a stored login is still accepted, asking the service
+    /// in the background the first time.
+    fn check(&self, secret_key: String, kind: ServiceKind) -> Check {
+        let (check, start_in) = self.checks().look_up(&secret_key);
+        if let Some(round) = start_in {
+            let app = self.clone();
+            tokio::spawn(async move {
+                let result = match app.connectors() {
+                    Ok(connectors) => connectors.verify(kind).await,
+                    Err(_) => Ok(()),
+                };
+                // Only a refusal counts: being offline says nothing about the login.
+                let accepted = !matches!(result, Err(Error::Auth { .. }));
+                app.checks().finish(round, secret_key, accepted);
+            });
+        }
+        check
+    }
+
     fn seen_now(&self) {
         // Plus one, because zero means "never".
         self.last_seen
@@ -145,6 +215,7 @@ pub async fn run(secrets: Arc<dyn SecretStore>, mode: Mode) -> Result<(), String
         started: Instant::now(),
         last_seen: Arc::new(AtomicU64::new(0)),
         closing: Arc::new(AtomicBool::new(false)),
+        checks: Arc::default(),
     };
 
     let port = if dev { DEV_PORT } else { 0 };
@@ -266,9 +337,23 @@ async fn state(State(app): State<App>) -> ApiResult {
     let (services, canteens) = match &selected {
         Some(_) => {
             let connectors = app.connectors()?;
-            (connectors.services(), connectors.offers_canteens())
+            let services: Vec<_> = connectors
+                .services()
+                .into_iter()
+                .map(|service| {
+                    let check = match service.logged_in {
+                        Ok(true) => app.check(connectors.secret_key(&service.id), service.kind),
+                        _ => Check::Accepted,
+                    };
+                    (service, check)
+                })
+                .collect();
+            (services, connectors.offers_canteens())
         }
         None => (Vec::new(), false),
+    };
+    let usable = |(service, check): &(ServiceState, Check)| {
+        matches!(service.logged_in, Ok(true)) && *check != Check::Rejected
     };
 
     let universities: Vec<Value> = Profile::builtin_all()?
@@ -281,10 +366,10 @@ async fn state(State(app): State<App>) -> ApiResult {
             let (service, available) = match tool.needs {
                 Needs::Nothing => (None, true),
                 Needs::Login(kind) => {
-                    let service = services.iter().find(|s| s.kind == kind);
+                    let service = services.iter().find(|(s, _)| s.kind == kind);
                     (
-                        service.map(|s| s.name.as_str()),
-                        service.is_some_and(|s| matches!(s.logged_in, Ok(true))),
+                        service.map(|(s, _)| s.name.as_str()),
+                        service.is_some_and(usable),
                     )
                 }
                 Needs::Canteens => (canteens.then_some(CANTEENS), canteens),
@@ -300,12 +385,14 @@ async fn state(State(app): State<App>) -> ApiResult {
         .collect();
     let services: Vec<Value> = services
         .iter()
-        .map(|s| {
+        .map(|(s, check)| {
             json!({
                 "id": s.id,
                 "name": s.name,
                 "kind": s.kind,
                 "logged_in": matches!(s.logged_in, Ok(true)),
+                "checking": *check == Check::Running,
+                "expired": *check == Check::Rejected,
                 "error": s.logged_in.as_ref().err().map(ToString::to_string),
             })
         })
@@ -353,6 +440,7 @@ async fn save_custom_instructions(Json(body): Json<CustomInstructions>) -> ApiRe
 }
 
 async fn start_moodle(State(app): State<App>) -> ApiResult {
+    app.checks().forget();
     let url = login::begin_moodle(&app.connectors()?)?;
     let opened = open::that(&url).is_ok();
     Ok(Json(json!({ "url": url, "opened": opened })))
@@ -361,7 +449,10 @@ async fn start_moodle(State(app): State<App>) -> ApiResult {
 async fn moodle_progress(State(app): State<App>) -> ApiResult {
     let (state, message) = match login::moodle_progress(&app.connectors()?)? {
         Progress::Waiting => ("waiting", None),
-        Progress::Done => ("done", None),
+        Progress::Done => {
+            app.checks().forget();
+            ("done", None)
+        }
         Progress::Failed(reason) => ("failed", Some(reason)),
     };
     Ok(Json(json!({ "state": state, "message": message })))
@@ -373,6 +464,7 @@ async fn login_webdav(State(app): State<App>, Json(login): Json<WebdavLogin>) ->
         password: login.password.trim().to_owned(),
     };
     login::store_webdav(&app.connectors()?, login).await?;
+    app.checks().forget();
     Ok(done())
 }
 
@@ -383,6 +475,7 @@ struct CalendarLink {
 
 async fn login_calendar(State(app): State<App>, Json(body): Json<CalendarLink>) -> ApiResult {
     login::store_calendar(&app.connectors()?, &body.link).await?;
+    app.checks().forget();
     Ok(done())
 }
 
@@ -393,6 +486,7 @@ struct ServiceChoice {
 
 async fn logout(State(app): State<App>, Json(choice): Json<ServiceChoice>) -> ApiResult {
     login::logout(&app.connectors()?, &choice.service)?;
+    app.checks().forget();
     Ok(done())
 }
 
@@ -452,7 +546,31 @@ mod tests {
             started: Instant::now(),
             last_seen: Arc::new(AtomicU64::new(0)),
             closing: Arc::new(AtomicBool::new(false)),
+            checks: Arc::default(),
         }
+    }
+
+    #[test]
+    fn a_login_is_checked_once_and_a_refusal_is_remembered() {
+        let mut checks = Checks::default();
+        let (check, start_in) = checks.look_up("uni:moodle");
+        assert_eq!((check, start_in), (Check::Running, Some(0)));
+        assert_eq!(checks.look_up("uni:moodle"), (Check::Running, None));
+
+        checks.finish(0, "uni:moodle".into(), false);
+        assert_eq!(checks.look_up("uni:moodle"), (Check::Rejected, None));
+    }
+
+    #[test]
+    fn an_answer_about_a_replaced_login_is_dropped() {
+        let mut checks = Checks::default();
+        let (_, round) = checks.look_up("uni:moodle");
+        checks.forget();
+        checks.finish(round.expect("round"), "uni:moodle".into(), false);
+
+        assert_eq!(checks.look_up("uni:moodle"), (Check::Running, Some(1)));
+        checks.finish(1, "uni:moodle".into(), true);
+        assert_eq!(checks.look_up("uni:moodle"), (Check::Accepted, None));
     }
 
     async fn status_of(path: &str, key: Option<&str>) -> StatusCode {

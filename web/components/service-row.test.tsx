@@ -14,6 +14,8 @@ const service: Service = {
   name: "Cloud",
   kind: "webdav",
   logged_in: false,
+  checking: false,
+  expired: false,
   error: null,
 };
 
@@ -47,6 +49,22 @@ test("a connected service can be disconnected", async () => {
 
   expect(api).toHaveBeenCalledWith("/logout", { service: "cloud" });
   expect(onChanged).toHaveBeenCalled();
+});
+
+test("a login that is still being checked does not count as connected yet", () => {
+  show({ logged_in: true, checking: true });
+  expect(screen.getByText("Checking")).toBeTruthy();
+  expect(screen.queryByText("Connected")).toBeNull();
+});
+
+test("an expired login says so and offers to connect again", async () => {
+  const { user } = show({ logged_in: true, expired: true });
+  expect(screen.getByText("Sign-in expired")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Disconnect" })).toBeNull();
+
+  await user.click(screen.getByRole("button", { name: "Reconnect" }));
+
+  expect(screen.getByLabelText("App password")).toBeTruthy();
 });
 
 test("cloud storage is connected with a username and an app password", async () => {
