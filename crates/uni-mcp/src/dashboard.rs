@@ -189,6 +189,7 @@ fn router(app: App) -> Router {
     let api = Router::new()
         .route("/state", get(state))
         .route("/university", post(choose_university))
+        .route("/custom-prompt", post(save_custom_prompt))
         .route("/login/moodle", post(start_moodle).get(moodle_progress))
         .route("/login/webdav", post(login_webdav))
         .route("/login/calendar", post(login_calendar))
@@ -259,7 +260,10 @@ async fn page(uri: Uri) -> Response {
 }
 
 async fn state(State(app): State<App>) -> ApiResult {
-    let selected = config::load()?.profile;
+    let config::Config {
+        profile: selected,
+        custom_prompt,
+    } = config::load()?;
     let (services, canteens) = match &selected {
         Some(_) => {
             let connectors = app.connectors()?;
@@ -313,6 +317,8 @@ async fn state(State(app): State<App>) -> ApiResult {
         "selected": selected,
         "services": services,
         "tools": tools,
+        "custom_prompt": custom_prompt.unwrap_or_default(),
+        "custom_prompt_limit": config::MAX_CUSTOM_PROMPT_CHARS,
         "executable": std::env::current_exe().ok().map(|exe| exe.display().to_string()),
         "version": env!("CARGO_PKG_VERSION"),
         "repository": env!("CARGO_PKG_REPOSITORY"),
@@ -329,6 +335,20 @@ async fn choose_university(Json(choice): Json<UniversityChoice>) -> ApiResult {
     let profile = Profile::builtin(&choice.id)?;
     config::save(&config::Config {
         profile: Some(profile.id),
+        ..config::load()?
+    })?;
+    Ok(done())
+}
+
+#[derive(Deserialize)]
+struct CustomPrompt {
+    custom_prompt: String,
+}
+
+async fn save_custom_prompt(Json(body): Json<CustomPrompt>) -> ApiResult {
+    config::save(&config::Config {
+        custom_prompt: config::custom_prompt(&body.custom_prompt)?,
+        ..config::load()?
     })?;
     Ok(done())
 }
