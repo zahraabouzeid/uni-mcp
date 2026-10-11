@@ -77,7 +77,7 @@ async fn set_autostart(
 ) -> Answer {
     owner(&accounts, &headers)?;
     let note = match switch.on {
-        true => autostart::turn_on(&launch)?,
+        true => autostart::turn_on(&launch, false)?,
         false => autostart::turn_off().map(|()| None)?,
     };
     Ok(autostart_state(note))

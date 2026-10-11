@@ -342,22 +342,35 @@ pub async fn serve(
     Ok(())
 }
 
-pub async fn serve_http(
+/// Where the owner of a new server creates their account.
+pub fn owner_link(port: u16, invite: &str) -> String {
+    format!("http://127.0.0.1:{port}{SERVER_PAGE}?invite={invite}")
+}
+
+/// Without `connectors` there is no university chosen on this computer, and
+/// only the accounts are served.
+pub async fn serve_http<F>(
     port: u16,
-    connectors: impl Fn() -> Connectors + Send + Sync + 'static,
+    connectors: Option<F>,
     custom_instructions: Option<String>,
     accounts: Accounts,
     data: &std::path::Path,
-) -> Result<(), String> {
+) -> Result<(), String>
+where
+    F: Fn() -> Connectors + Send + Sync + 'static,
+{
     let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, port))
         .await
         .map_err(|e| format!("cannot listen on port {port}: {e}"))?;
     let address = listener.local_addr().map_err(text)?;
-    println!("MCP server: http://{address}{HTTP_PATH}");
-    if accounts.is_empty() {
+    println!("Admin dashboard: http://{address}{SERVER_PAGE}");
+    if connectors.is_some() {
+        println!("MCP server: http://{address}{HTTP_PATH}");
+    }
+    if accounts.waits_for_its_owner(accounts::now()) {
         let invite = accounts.invite(accounts::now()).map_err(text)?;
         println!("No account yet. Create the owner's within a week at:");
-        println!("http://{address}{SERVER_PAGE}?invite={invite}");
+        println!("{}", owner_link(address.port(), &invite));
     }
     println!("Press Ctrl+C to stop.");
 
@@ -373,12 +386,22 @@ pub async fn serve_http(
 }
 
 /// Every session gets its own server, so a new login takes effect in the next one.
-fn http_router(
-    connectors: impl Fn() -> Connectors + Send + Sync + 'static,
+fn http_router<F>(
+    connectors: Option<F>,
     custom_instructions: Option<String>,
     accounts: Arc<Accounts>,
     launch: Launch,
-) -> Router {
+) -> Router
+where
+    F: Fn() -> Connectors + Send + Sync + 'static,
+{
+    let router = Router::new()
+        .nest("/api", hosting::api(accounts, launch))
+        .route("/", get(|| async { Redirect::to(SERVER_PAGE) }))
+        .fallback(crate::dashboard::page);
+    let Some(connectors) = connectors else {
+        return router;
+    };
     let service = StreamableHttpService::new(
         move || {
             Ok(UniServer::new(connectors()).with_custom_instructions(custom_instructions.clone()))
@@ -386,11 +409,7 @@ fn http_router(
         Arc::new(LocalSessionManager::default()),
         StreamableHttpServerConfig::default(),
     );
-    Router::new()
-        .nest_service(HTTP_PATH, service)
-        .nest("/api", hosting::api(accounts, launch))
-        .route("/", get(|| async { Redirect::to(SERVER_PAGE) }))
-        .fallback(crate::dashboard::page)
+    router.nest_service(HTTP_PATH, service)
 }
 
 fn render<T: Serialize>(kind: &str, result: uni_core::Result<T>) -> ToolResult {
@@ -693,7 +712,7 @@ mod tests {
         let (accounts, folder) = crate::accounts::testing::accounts("mcp-over-http");
         let accounts = Arc::new(accounts);
         let launch = crate::autostart::testing::launch;
-        let answer = http_router(connectors, None, accounts.clone(), launch())
+        let answer = http_router(Some(connectors), None, accounts.clone(), launch())
             .oneshot(request("localhost"))
             .await
             .expect("response");
@@ -701,7 +720,7 @@ mod tests {
         assert!(answer.headers().contains_key("mcp-session-id"));
 
         // A page on another site that resolves to this computer is turned away.
-        let foreign = http_router(connectors, None, accounts, launch())
+        let foreign = http_router(Some(connectors), None, accounts, launch())
             .oneshot(request("evil.example"))
             .await
             .expect("response");

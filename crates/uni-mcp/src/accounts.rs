@@ -124,8 +124,10 @@ impl Accounts {
         fs::rename(&draft, &self.file).map_err(cannot_write)
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.state().accounts.is_empty()
+    /// A new server with nobody on it and no invite on its way.
+    pub fn waits_for_its_owner(&self, now: u64) -> bool {
+        let state = self.state();
+        state.accounts.is_empty() && !state.invites.iter().any(|invite| invite.expires > now)
     }
 
     /// A new invite. The code is shown once and cannot be read back.
@@ -365,11 +367,26 @@ mod tests {
     #[test]
     fn the_first_account_owns_the_server_and_later_ones_do_not() {
         let (accounts, folder) = accounts("owner");
-        assert!(accounts.is_empty());
+        assert!(accounts.waits_for_its_owner(0));
         let (first, _) = join(&accounts, "Zahraa");
         let (second, _) = join(&accounts, "Bestie");
         assert!(first.owner && !second.owner);
         assert_eq!(accounts.people(), [first, second]);
+        fs::remove_dir_all(folder).expect("clean up");
+    }
+
+    #[test]
+    fn a_new_server_waits_for_its_owner_until_an_invite_is_out() {
+        let (accounts, folder) = accounts("waits");
+        assert!(accounts.waits_for_its_owner(0));
+        let invite = accounts.invite(0).expect("invite");
+        assert!(!accounts.waits_for_its_owner(0));
+        assert!(accounts.waits_for_its_owner(INVITE_VALID_SECONDS));
+
+        accounts
+            .accept(&invite, "Zahraa", PASSWORD, 0)
+            .expect("owner");
+        assert!(!accounts.waits_for_its_owner(INVITE_VALID_SECONDS));
         fs::remove_dir_all(folder).expect("clean up");
     }
 

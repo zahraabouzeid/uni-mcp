@@ -114,6 +114,15 @@ async fn run(cli: Cli) -> Result<(), String> {
         return dashboard::run(secrets, mode).await;
     }
 
+    if let Command::Server {
+        port,
+        data,
+        autostart,
+    } = command
+    {
+        return run_server(cli.profile, secrets, port, data, autostart).await;
+    }
+
     let profile_id = match cli.profile {
         Some(id) => id,
         None => config::load().map_err(|e| e.to_string())?.profile.ok_or(
@@ -121,7 +130,7 @@ async fn run(cli: Cli) -> Result<(), String> {
         )?,
     };
     let profile = Profile::builtin(&profile_id).map_err(|e| e.to_string())?;
-    let connectors = Connectors::new(profile.clone(), secrets.clone());
+    let connectors = Connectors::new(profile, secrets);
     // A broken config must not keep the MCP client from its tools.
     let custom_instructions = || {
         config::load()
@@ -130,44 +139,8 @@ async fn run(cli: Cli) -> Result<(), String> {
     };
 
     match command {
-        Command::Dashboard { .. } => Ok(()),
+        Command::Dashboard { .. } | Command::Server { .. } => Ok(()),
         Command::Serve => server::serve(connectors, custom_instructions()).await,
-        Command::Server {
-            port,
-            data,
-            autostart,
-        } => {
-            let folder = data
-                .or_else(|| {
-                    Some(
-                        dirs::data_dir()?
-                            .join(env!("CARGO_PKG_NAME"))
-                            .join("server"),
-                    )
-                })
-                .ok_or("this system has no folder for program data; pass --data")?;
-            match autostart {
-                Some(Switch::On) => {
-                    let launch = autostart::Launch::of_this_server(port, &folder)
-                        .map_err(|e| e.to_string())?;
-                    let note = autostart::turn_on(&launch).map_err(|e| e.to_string())?;
-                    println!("The server now starts with this computer.");
-                    if let Some(note) = note {
-                        println!("{note}");
-                    }
-                    return Ok(());
-                }
-                Some(Switch::Off) => {
-                    autostart::turn_off().map_err(|e| e.to_string())?;
-                    println!("The server no longer starts with this computer.");
-                    return Ok(());
-                }
-                None => {}
-            }
-            let accounts = accounts::Accounts::open(&folder).map_err(|e| e.to_string())?;
-            let connectors = move || Connectors::new(profile.clone(), secrets.clone());
-            server::serve_http(port, connectors, custom_instructions(), accounts, &folder).await
-        }
         Command::Login { service } => login::login(&connectors, &service)
             .await
             .map_err(|e| e.to_string()),
@@ -186,4 +159,69 @@ async fn run(cli: Cli) -> Result<(), String> {
             Ok(())
         }
     }
+}
+
+/// The server mode works on a computer where no university was ever chosen:
+/// then it serves the accounts and their dashboard only.
+async fn run_server(
+    profile: Option<String>,
+    secrets: Arc<dyn SecretStore>,
+    port: u16,
+    data: Option<PathBuf>,
+    autostart: Option<Switch>,
+) -> Result<(), String> {
+    let text = |e: uni_core::Error| e.to_string();
+    let folder = data
+        .or_else(|| {
+            Some(
+                dirs::data_dir()?
+                    .join(env!("CARGO_PKG_NAME"))
+                    .join("server"),
+            )
+        })
+        .ok_or("this system has no folder for program data; pass --data")?;
+    let accounts = accounts::Accounts::open(&folder).map_err(text)?;
+
+    match autostart {
+        Some(Switch::On) => {
+            // The background server has no terminal to show the link in.
+            let now = accounts::now();
+            if accounts.waits_for_its_owner(now) {
+                let invite = accounts.invite(now).map_err(text)?;
+                println!("Create the owner's account within a week at:");
+                println!("{}", server::owner_link(port, &invite));
+            }
+            let launch = autostart::Launch::of_this_server(port, &folder).map_err(text)?;
+            let note = autostart::turn_on(&launch, true).map_err(text)?;
+            let when = match autostart::MOMENT {
+                Some(autostart::Moment::Boot) => "whenever this computer starts",
+                _ => "whenever you log in to this computer",
+            };
+            println!("The server is running in the background and starts {when}.");
+            println!("Admin dashboard: http://127.0.0.1:{port}/server");
+            if let Some(note) = note {
+                println!("{note}");
+            }
+            return Ok(());
+        }
+        Some(Switch::Off) => {
+            autostart::turn_off().map_err(text)?;
+            println!("The server no longer starts by itself. A running one keeps running.");
+            return Ok(());
+        }
+        None => {}
+    }
+
+    let chosen = profile.or_else(|| config::load().ok()?.profile);
+    let connectors = match chosen {
+        Some(id) => {
+            let profile = Profile::builtin(&id).map_err(text)?;
+            Some(move || Connectors::new(profile.clone(), secrets.clone()))
+        }
+        None => None,
+    };
+    let custom_instructions = config::load()
+        .map(|config| config.custom_instructions)
+        .unwrap_or_default();
+    server::serve_http(port, connectors, custom_instructions, accounts, &folder).await
 }

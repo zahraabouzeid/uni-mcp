@@ -1,5 +1,6 @@
 //! Lets the server start by itself with the computer, set up for the current
-//! user and without administrator rights.
+//! user and without administrator rights. A running server that turns this on
+//! does not start a second copy; the command line does start it right away.
 
 use std::path::{Path, PathBuf};
 
@@ -131,12 +132,27 @@ mod system {
             .is_ok()
     }
 
-    pub fn turn_on(launch: &Launch) -> Result<Option<String>> {
+    pub fn turn_on(launch: &Launch, start_now: bool) -> Result<Option<String>> {
+        use std::os::windows::process::CommandExt;
+        use std::process::{Command, Stdio};
+
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
         let command = windows_command(launch, crate::scheme::headless_console_host().as_deref());
         let (run, _) = RegKey::predef(HKEY_CURRENT_USER)
             .create_subkey(RUN)
             .map_err(failed)?;
         run.set_value(NAME, &command).map_err(failed)?;
+        if start_now {
+            Command::new(&launch.program)
+                .args(&launch.arguments)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .creation_flags(CREATE_NO_WINDOW)
+                .spawn()
+                .map_err(|e| Error::Config(format!("cannot start the server now: {e}")))?;
+        }
         Ok(None)
     }
 
@@ -185,8 +201,7 @@ mod system {
         unit_file().is_some_and(|file| file.is_file())
     }
 
-    /// Does not start the service now: the server asking for this is running.
-    pub fn turn_on(launch: &Launch) -> Result<Option<String>> {
+    pub fn turn_on(launch: &Launch, start_now: bool) -> Result<Option<String>> {
         let file = unit_file().ok_or_else(|| Error::Config("no home folder".into()))?;
         let cannot_write =
             |e: std::io::Error| Error::Config(format!("cannot write {}: {e}", file.display()));
@@ -204,6 +219,11 @@ mod system {
             .arg("enable-linger")
             .output()
             .is_ok_and(|output| output.status.success());
+        if start_now && !systemctl(&["restart", &unit_name()]) {
+            return Ok(Some(
+                "It could not be started right now; it starts with the next boot.".to_owned(),
+            ));
+        }
         Ok((!stays_after_logout).then(|| {
             "It starts when you log in. To start it at boot, run once: \
              sudo loginctl enable-linger $USER"
@@ -250,8 +270,8 @@ mod system {
         agent_file().is_some_and(|file| file.is_file())
     }
 
-    /// The system picks the file up at the next login.
-    pub fn turn_on(launch: &Launch) -> Result<Option<String>> {
+    /// Without `start_now` the system picks the file up at the next login.
+    pub fn turn_on(launch: &Launch, start_now: bool) -> Result<Option<String>> {
         let file = agent_file().ok_or_else(|| Error::Config("no home folder".into()))?;
         let cannot_write =
             |e: std::io::Error| Error::Config(format!("cannot write {}: {e}", file.display()));
@@ -259,6 +279,12 @@ mod system {
             fs::create_dir_all(folder).map_err(cannot_write)?;
         }
         fs::write(&file, launchd_plist(launch)).map_err(cannot_write)?;
+        if start_now {
+            let _ = std::process::Command::new("launchctl")
+                .arg("load")
+                .arg(&file)
+                .output();
+        }
         Ok(None)
     }
 
@@ -286,7 +312,7 @@ mod system {
         false
     }
 
-    pub fn turn_on(_launch: &Launch) -> Result<Option<String>> {
+    pub fn turn_on(_launch: &Launch, _start_now: bool) -> Result<Option<String>> {
         Err(Error::Config(
             "starting with the computer is not supported on this system".into(),
         ))
