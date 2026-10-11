@@ -56,10 +56,10 @@ export async function api<T>(path: string, post?: object): Promise<T> {
     headers: { "x-unimcp-key": key, "content-type": "application/json" },
     body: post ? JSON.stringify(post) : undefined,
   }).catch(() => {
-    throw new Error("unimcp is not running. Start it again in a terminal.");
+    throw new Error("uniMCP is not running. Start it again to continue.");
   });
   if (response.status === 403) {
-    throw new Error("Open the address that unimcp printed in the terminal.");
+    throw new Error("This link is no longer valid. Start uniMCP again to open the dashboard.");
   }
   const data = await response.json();
   if (!response.ok) {

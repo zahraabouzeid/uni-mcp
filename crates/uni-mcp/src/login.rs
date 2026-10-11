@@ -160,7 +160,7 @@ fn moodle(connectors: &Connectors) -> Result<()> {
     } else {
         println!("Open this page in your browser:\n\n   {url}\n");
     }
-    println!("Sign in as usual. When the browser asks whether it may open unimcp, allow it.");
+    println!("Sign in as usual. When the browser asks whether it may open uniMCP, allow it.");
     println!("Waiting for the sign-in to finish (Ctrl+C to cancel)...");
 
     let deadline = Instant::now() + SIGN_IN_TIMEOUT;

@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "uniMCP",
-  description: "Connect your AI app to your university.",
+  description: "Connect your AI assistant to your university.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

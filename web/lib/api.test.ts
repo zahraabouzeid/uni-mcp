@@ -38,7 +38,7 @@ test("returns what the backend answered", async () => {
 
 test("explains a missing or wrong key", async () => {
   backendAnswers(403, null);
-  await expect(api("/state")).rejects.toThrow(/printed in the terminal/);
+  await expect(api("/state")).rejects.toThrow(/no longer valid/);
 });
 
 test("passes on the backend's error message", async () => {
@@ -46,7 +46,7 @@ test("passes on the backend's error message", async () => {
   await expect(api("/state")).rejects.toThrow("choose a university first");
 });
 
-test("says so when unimcp is not running", async () => {
+test("says so when uniMCP is not running", async () => {
   vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
   await expect(api("/state")).rejects.toThrow(/not running/);
 });

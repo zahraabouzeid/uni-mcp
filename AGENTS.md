@@ -1,6 +1,6 @@
 # uniMCP
 
-A local, read-only MCP server that gives AI apps access to a student's
+A local, read-only MCP server that gives AI assistants access to a student's
 university services: courses, files and timetable.
 
 ## Rules

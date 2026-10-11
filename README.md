@@ -4,92 +4,92 @@
 
 I built uniMCP during my BSc. studies in
 [Computational Engineering Science](https://www.ces.rwth-aachen.de/) at
-[RWTH Aachen University](https://www.rwth-aachen.de/), to let an AI app help me
-with my own courses, files, timetable and even the canteen menu.
+[RWTH Aachen University](https://www.rwth-aachen.de/), so that an AI assistant
+could help me with my own courses, files, timetable and even the canteen menu.
 
-It gives your AI app read-only access to your university and runs on your own
-computer as an [MCP](https://modelcontextprotocol.io) server.
+uniMCP is an [MCP](https://modelcontextprotocol.io) server that gives your AI
+assistant read-only access to your university services. It runs locally on
+your computer.
 
 Unofficial, and not affiliated with any university.
 
-## What it can do
+## Tools
 
-| Tool                | What it reads                                      |
+| Tool                | Description                                        |
 | ------------------- | -------------------------------------------------- |
-| `list_courses`      | The courses you are enrolled in                    |
-| `list_course_files` | Slides, exercise sheets and other course files     |
-| `list_assignments`  | Assignments and their deadlines                    |
-| `read_course_file`  | A course file, in the formats listed below         |
-| `list_events`       | Your timetable: lectures, exercises, exam dates    |
-| `list_canteen_menu` | What the canteens serve, with prices and allergens |
-| `list_files`        | A folder in your cloud storage                     |
-| `read_file`         | A file from your cloud storage, same formats       |
-| `status`            | Which services are connected                       |
+| `list_courses`      | Lists the courses you are enrolled in              |
+| `list_course_files` | Lists slides, exercise sheets and other files      |
+| `list_assignments`  | Lists assignments and their deadlines              |
+| `read_course_file`  | Reads a course file in any supported format        |
+| `list_events`       | Lists your lectures, exercises and exam dates      |
+| `list_canteen_menu` | Lists canteen menus with prices and allergens      |
+| `list_files`        | Lists a folder in your cloud storage               |
+| `read_file`         | Reads a cloud storage file in any supported format |
+| `status`            | Shows which services are connected                 |
 
-Files that can be read:
+### Supported file formats
 
-- **PDF**: as text, or page by page as pictures, so the AI also sees diagrams,
-  formulas and scanned pages.
-- **Word, PowerPoint, Excel** (`.docx`, `.pptx`, `.xlsx`): their text, slide
-  by slide and sheet by sheet, and the pictures placed in Word and PowerPoint
-  files.
-- **Pictures** (PNG, JPEG, GIF, WebP): as pictures.
-- **Zip archives**: a list of what is inside, and any of the files above out
-  of them.
-- **Plain text**, such as code, Markdown or CSV.
+- **PDF**: extracted text, or individual pages rendered as images, which
+  preserves diagrams, formulas and scanned pages.
+- **Word, PowerPoint, Excel** (`.docx`, `.pptx`, `.xlsx`): text per slide and
+  per sheet, plus the images embedded in Word and PowerPoint files.
+- **Images** (PNG, JPEG, GIF, WebP): passed through unchanged.
+- **Zip archives**: a listing of the contents, and any supported file inside.
+- **Plain text**, such as source code, Markdown or CSV.
 
-Not yet: password-protected PDFs, the old Office formats (`.doc`, `.ppt`,
-`.xls`), vector drawings and charts inside Office files, and other archive
-types.
+Not supported yet: password-protected PDFs, legacy Office formats (`.doc`,
+`.ppt`, `.xls`), vector drawings and charts embedded in Office files, and
+other archive formats.
 
 ## Prompts
 
-Ready-made requests you pick from your AI app's menu, where the app supports
-them:
+Prompt templates, available in clients that support MCP prompts:
 
-| Prompt                | You fill in             | What it asks for                              |
-| --------------------- | ----------------------- | --------------------------------------------- |
-| My week               | nothing                 | This week's timetable and what is due in it   |
-| Deadlines             | nothing                 | All open assignments, the soonest first       |
-| Explain a lecture     | course, optional topic  | An explanation of the matching slides         |
-| Help with an exercise | course, sheet           | Hints for an exercise sheet before a solution |
-| Summarise a course    | course                  | An overview from all of the course's material |
+| Prompt                | Arguments                    | Description                                   |
+| --------------------- | ---------------------------- | --------------------------------------------- |
+| My week               | None                         | This week's timetable and the work due in it  |
+| Deadlines             | None                         | All open assignments, soonest first           |
+| Explain a lecture     | `course`, `topic` (optional) | An explanation of the matching lecture slides |
+| Help with an exercise | `course`, `sheet`            | Hints for an exercise sheet before a solution |
+| Summarise a course    | `course`                     | An overview based on all course material      |
 
-## Safety
+## Security and privacy
 
-- **Read-only.** No tool can change, send, submit or delete anything.
-- **Local.** Your data goes from the university straight to your computer.
-- **No university password.** Moodle signs you in on the university's own page,
-  cloud storage uses an app password, the calendar a link you publish yourself.
-  The canteen menu is public and needs no login.
-- **Logins live in your system keyring**, and never pass through the AI.
+- **Read-only.** No tool can modify, send, submit or delete anything.
+- **Local.** uniMCP runs on your computer and fetches your data directly from
+  the university.
+- **No university password.** Moodle uses the university's own sign-in page,
+  cloud storage an app password, and the calendar a link you publish yourself.
+  The canteen menu is public and requires no login.
+- **Credentials stay in your system keyring** and are never exposed to the AI
+  assistant.
 
-## Universities
+## Supported universities
 
 | University             | Courses | Cloud storage | Timetable  | Canteens  |
 | ---------------------- | ------- | ------------- | ---------- | --------- |
 | RWTH Aachen University | Moodle  | Sciebo        | RWTHonline | OpenMensa |
 
-A university is one file in [`profiles`](profiles). To add yours, see
-[CONTRIBUTING.md](CONTRIBUTING.md).
+Each university is defined by a single file in [`profiles`](profiles). To add
+yours, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Getting started
 
-Download `unimcp` for your system from the
+Download `unimcp` for your platform from the
 [releases page](https://github.com/zahraabouzeid/uni-mcp/releases) and run it.
 
-It opens the dashboard in your browser, where you connect your services, try
-the tools, and get the line that adds it to your AI app.
+The dashboard opens in your browser. From there you can connect your services,
+try out the tools, and copy the configuration for your AI assistant.
 
-Under **Settings** you can add custom instructions, such as what you study or
-where you keep your examination regulations.
+Under **Settings** you can add custom instructions, for example your degree
+programme or where you keep your examination regulations.
 
-Browser sign-in for Moodle works on Windows only for now; elsewhere
-`unimcp login moodle` asks you to paste a link.
+Browser sign-in for Moodle is currently available on Windows only. On other
+platforms, run `unimcp login moodle` and paste the link when prompted.
 
 ### Building from source
 
-You need [Rust](https://rustup.rs) and [Node.js](https://nodejs.org).
+Requires [Rust](https://rustup.rs) and [Node.js](https://nodejs.org).
 
 ```sh
 cd web && npm install && npm run build && cd ..
@@ -100,7 +100,7 @@ cargo build --release
 ## Contributing
 
 Contributions are welcome, especially new universities. The rules and the
-workflow are in [CONTRIBUTING.md](CONTRIBUTING.md).
+workflow are described in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
