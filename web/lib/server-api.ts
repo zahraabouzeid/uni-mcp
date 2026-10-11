@@ -1,5 +1,9 @@
 export type Person = { id: string; name: string; owner: boolean };
 
+export type About = { version: string; repository: string };
+
+export type Session = { person: Person; about: About };
+
 export class ServerError extends Error {
   constructor(
     readonly status: number,

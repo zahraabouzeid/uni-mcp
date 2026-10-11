@@ -54,7 +54,11 @@ test("an invite is shown as a link to this server", async () => {
 });
 
 test("accepting an invite sends it with the chosen name and password", async () => {
-  vi.mocked(serverApi).mockResolvedValue({ person: member });
+  const session = {
+    person: member,
+    about: { version: "1.0.0", repository: "https://example.org" },
+  };
+  vi.mocked(serverApi).mockResolvedValue(session);
   const onDone = vi.fn();
   const user = userEvent.setup();
   render(<Join invite="c0de" onDone={onDone} />);
@@ -68,7 +72,7 @@ test("accepting an invite sends it with the chosen name and password", async () 
     name: "Bestie",
     password: "correct horse battery",
   });
-  expect(onDone).toHaveBeenCalledWith(member);
+  expect(onDone).toHaveBeenCalledWith(session);
 });
 
 test("a refused login shows why and stays on the form", async () => {

@@ -117,6 +117,16 @@ fn owner(accounts: &Accounts, headers: &HeaderMap) -> Result<Person, Refusal> {
     Ok(person)
 }
 
+fn about(person: Person) -> Value {
+    json!({
+        "person": person,
+        "about": {
+            "version": env!("CARGO_PKG_VERSION"),
+            "repository": env!("CARGO_PKG_REPOSITORY"),
+        },
+    })
+}
+
 /// The cookie is for this site's own pages only and hidden from scripts.
 fn with_session(person: Person, session: Option<&str>) -> Response {
     let cookie = match session {
@@ -125,7 +135,7 @@ fn with_session(person: Person, session: Option<&str>) -> Response {
         ),
         None => format!("{COOKIE_NAME}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Strict"),
     };
-    ([(SET_COOKIE, cookie)], Json(json!({ "person": person }))).into_response()
+    ([(SET_COOKIE, cookie)], Json(about(person))).into_response()
 }
 
 #[derive(Deserialize)]
@@ -175,7 +185,7 @@ async fn log_out(State(accounts): State<Arc<Accounts>>, headers: HeaderMap) -> A
 
 async fn me(State(accounts): State<Arc<Accounts>>, headers: HeaderMap) -> Answer {
     let person = logged_in(&accounts, &headers)?;
-    Ok(Json(json!({ "person": person })).into_response())
+    Ok(Json(about(person)).into_response())
 }
 
 async fn people(State(accounts): State<Arc<Accounts>>, headers: HeaderMap) -> Answer {

@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { Join, LogIn } from "@/components/account-forms";
+import { AdminConsole } from "@/components/admin-console";
 import { Console } from "@/components/console";
 import { Button, ErrorText } from "@/components/ui";
 import { api, errorMessage } from "@/lib/api";
-import { type Person, serverApi } from "@/lib/server-api";
+import { serverApi, type Session } from "@/lib/server-api";
 
 function fromAddress(name: string) {
   return typeof window === "undefined"
@@ -19,21 +20,19 @@ function clearAddress() {
 
 export default function Server() {
   // `undefined` until the server has said whether this browser is logged in.
-  const [person, setPerson] = useState<Person | null | undefined>(undefined);
+  const [session, setSession] = useState<Session | null | undefined>(undefined);
+  const person = session?.person;
   const [invite, setInvite] = useState(() => fromAddress("invite"));
   // The link Moodle sends back after a sign-in, where the browser passes it on.
   const [moodleLink, setMoodleLink] = useState(() => fromAddress("moodle"));
   const [moodleError, setMoodleError] = useState<string | null>(null);
 
   useEffect(() => {
-    serverApi<{ person: Person }>("/account/me").then(
-      (answer) => setPerson(answer.person),
-      () => setPerson(null),
-    );
+    serverApi<Session>("/account/me").then(setSession, () => setSession(null));
   }, []);
 
   useEffect(() => {
-    if (!person || !moodleLink) return;
+    if (!person || person.owner || !moodleLink) return;
     api("/login/moodle/link", { link: moodleLink }).then(
       () => {
         clearAddress();
@@ -43,21 +42,24 @@ export default function Server() {
     );
   }, [person, moodleLink]);
 
-  function joined(person: Person) {
+  function joined(session: Session) {
     // The invite is used up, so it should not stay in the address.
     clearAddress();
     setInvite(null);
-    setPerson(person);
+    setSession(session);
   }
 
   async function logOut() {
     await serverApi("/account/logout", {}).catch(() => {});
-    setPerson(null);
+    setSession(null);
   }
 
-  if (person === undefined) return null;
-  if (!person) {
-    return invite ? <Join invite={invite} onDone={joined} /> : <LogIn onDone={setPerson} />;
+  if (session === undefined) return null;
+  if (!session || !person) {
+    return invite ? <Join invite={invite} onDone={joined} /> : <LogIn onDone={setSession} />;
+  }
+  if (person.owner) {
+    return <AdminConsole person={person} about={session.about} onLogOut={logOut} />;
   }
   if (moodleError) {
     return (

@@ -2,10 +2,10 @@
 
 import { type FormEvent, type ReactNode, useState } from "react";
 import { errorMessage } from "@/lib/api";
-import { type Person, serverApi } from "@/lib/server-api";
+import { serverApi, type Session } from "@/lib/server-api";
 import { Button, ErrorText, Field } from "./ui";
 
-type Props = { onDone: (person: Person) => void };
+type Props = { onDone: (session: Session) => void };
 
 export function LogIn({ onDone }: Props) {
   return (
@@ -72,12 +72,12 @@ function AccountForm({ title, action, path, extra, onDone, children }: FormProps
     setBusy(true);
     setError(null);
     try {
-      const { person } = await serverApi<{ person: Person }>(path, {
+      const session = await serverApi<Session>(path, {
         ...extra,
         name: String(form.get("name") ?? ""),
         password: String(form.get("password") ?? ""),
       });
-      onDone(person);
+      onDone(session);
     } catch (e) {
       setError(errorMessage(e));
       setBusy(false);

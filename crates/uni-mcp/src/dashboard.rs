@@ -333,6 +333,11 @@ async fn require_account(
         let refusal = Json(json!({ "error": "log in first" }));
         return (StatusCode::UNAUTHORIZED, refusal).into_response();
     };
+    // The admin looks after the server and keeps no university logins on it.
+    if person.owner {
+        let refusal = Json(json!({ "error": "the admin account has no university dashboard" }));
+        return (StatusCode::FORBIDDEN, refusal).into_response();
+    }
     request.extensions_mut().insert(hosted.app_of(&person.id));
     next.run(request).await
 }
@@ -784,7 +789,7 @@ mod tests {
                 .expect("account")
                 .1
         };
-        let (mine, hers) = (join("Zahraa"), join("Bestie"));
+        let (admin, mine, hers) = (join("Admin"), join("Zahraa"), join("Bestie"));
         let api = hosted_api(Arc::new(accounts), Arc::new(vault));
 
         let call = |session: Option<&str>, method: &str, path: &str, body: Value| {
@@ -810,6 +815,11 @@ mod tests {
 
         let (status, _) = call(None, "GET", "/state", json!({})).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
+        let (status, _) = call(Some(&admin), "GET", "/state", json!({})).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let login = json!({ "user": "ab123456", "password": "app password" });
+        let (status, _) = call(Some(&admin), "POST", "/login/webdav", login).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
 
         let note = json!({ "custom_instructions": "Only for me." });
         let (status, _) = call(Some(&mine), "POST", "/custom-instructions", note).await;
