@@ -317,10 +317,16 @@ async fn page_closed(app: &App) {
     }
 }
 
-async fn page(uri: Uri) -> Response {
-    let path = match uri.path().trim_start_matches('/') {
+/// A page is exported as `<name>.html` and opened without the ending.
+pub(crate) async fn page(uri: Uri) -> Response {
+    let path = match uri.path().trim_matches('/') {
         "" => "index.html",
         path => path,
+    };
+    let as_page = format!("{path}.html");
+    let path = match PAGE.get_file(path) {
+        None if PAGE.get_file(&as_page).is_some() => as_page.as_str(),
+        _ => path,
     };
     match PAGE.get_file(path) {
         Some(file) => {
@@ -657,6 +663,7 @@ mod tests {
     #[tokio::test]
     async fn the_page_is_served_without_a_key() {
         assert_eq!(status_of("/", None).await, StatusCode::OK);
+        assert_eq!(status_of("/server", None).await, StatusCode::OK);
         assert_eq!(
             status_of("/no-such-file.js", None).await,
             StatusCode::NOT_FOUND
