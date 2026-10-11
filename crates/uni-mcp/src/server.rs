@@ -23,7 +23,9 @@ use serde_json::{Value, json};
 use uni_core::document::{Request, View};
 use uni_core::model::{Document, Image};
 
+use crate::accounts::{self, Accounts};
 use crate::connectors::{Connectors, ServiceKind};
+use crate::hosting;
 
 const INSTRUCTIONS: &str = "Read-only access to the student's university services: courses and \
 their files on the learning platform, the timetable, and cloud storage.\n\n\
@@ -340,18 +342,22 @@ pub async fn serve_http(
     port: u16,
     connectors: impl Fn() -> Connectors + Send + Sync + 'static,
     custom_instructions: Option<String>,
+    accounts: Accounts,
 ) -> Result<(), String> {
     let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, port))
         .await
         .map_err(|e| format!("cannot listen on port {port}: {e}"))?;
     let address = listener.local_addr().map_err(text)?;
     println!("MCP server: http://{address}{HTTP_PATH}");
+    if accounts.is_empty() {
+        let invite = accounts.invite(accounts::now()).map_err(text)?;
+        println!("No account yet. Invite code for the owner, valid for a week: {invite}");
+    }
     println!("Press Ctrl+C to stop.");
 
+    let router = http_router(connectors, custom_instructions, Arc::new(accounts));
     tokio::select! {
-        served = axum::serve(listener, http_router(connectors, custom_instructions)) => {
-            served.map_err(text)
-        }
+        served = axum::serve(listener, router) => served.map_err(text),
         _ = tokio::signal::ctrl_c() => {
             println!("Stopped.");
             Ok(())
@@ -363,6 +369,7 @@ pub async fn serve_http(
 fn http_router(
     connectors: impl Fn() -> Connectors + Send + Sync + 'static,
     custom_instructions: Option<String>,
+    accounts: Arc<Accounts>,
 ) -> Router {
     let service = StreamableHttpService::new(
         move || {
@@ -371,7 +378,9 @@ fn http_router(
         Arc::new(LocalSessionManager::default()),
         StreamableHttpServerConfig::default(),
     );
-    Router::new().nest_service(HTTP_PATH, service)
+    Router::new()
+        .nest_service(HTTP_PATH, service)
+        .nest("/api", hosting::api(accounts))
 }
 
 fn render<T: Serialize>(kind: &str, result: uni_core::Result<T>) -> ToolResult {
@@ -671,7 +680,9 @@ mod tests {
                 .expect("request")
         };
 
-        let answer = http_router(connectors, None)
+        let (accounts, folder) = crate::accounts::testing::accounts("mcp-over-http");
+        let accounts = Arc::new(accounts);
+        let answer = http_router(connectors, None, accounts.clone())
             .oneshot(request("localhost"))
             .await
             .expect("response");
@@ -679,11 +690,12 @@ mod tests {
         assert!(answer.headers().contains_key("mcp-session-id"));
 
         // A page on another site that resolves to this computer is turned away.
-        let foreign = http_router(connectors, None)
+        let foreign = http_router(connectors, None, accounts)
             .oneshot(request("evil.example"))
             .await
             .expect("response");
         assert_ne!(foreign.status(), StatusCode::OK);
+        std::fs::remove_dir_all(folder).expect("clean up");
     }
 
     #[test]

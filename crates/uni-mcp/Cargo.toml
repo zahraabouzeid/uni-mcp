@@ -11,6 +11,7 @@ name = "unimcp"
 path = "src/main.rs"
 
 [dependencies]
+argon2 = "0.5"
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio"] }
 base64.workspace = true
 clap = { version = "4", features = ["derive", "env"] }
@@ -25,6 +26,7 @@ rpassword = "7"
 schemars = "1"
 serde.workspace = true
 serde_json.workspace = true
+sha2 = "0.10"
 sysinfo = { version = "0.37", default-features = false, features = ["system"] }
 tokio = { workspace = true, features = ["net", "signal", "time"] }
 toml.workspace = true
