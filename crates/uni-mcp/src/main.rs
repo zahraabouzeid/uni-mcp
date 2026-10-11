@@ -1,6 +1,7 @@
 //! `unimcp`: the dashboard and commands for the student, and the MCP server
 //! their AI assistant talks to.
 
+mod apps;
 mod config;
 mod connectors;
 mod dashboard;

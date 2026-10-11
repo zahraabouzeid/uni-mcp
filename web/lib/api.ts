@@ -32,6 +32,13 @@ export type ToolRun = {
   images: { page: number | null; url: string }[];
 };
 
+export type AppTarget = {
+  id: "claude-desktop" | "claude-code" | "codex";
+  installed: boolean;
+  added: boolean;
+  running: boolean;
+};
+
 export type DashboardState = {
   universities: University[];
   selected: string | null;
@@ -40,6 +47,7 @@ export type DashboardState = {
   custom_instructions: string;
   custom_instructions_limit: number;
   command: string | null;
+  apps: AppTarget[];
   version: string;
   repository: string;
   browser_sign_in: boolean;

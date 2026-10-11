@@ -219,7 +219,9 @@ export default function Console() {
                 onSaved={load}
               />
             ) : (
-              state.command && <SetupView command={state.command} />
+              state.command && (
+                <SetupView command={state.command} apps={state.apps} onChanged={load} />
+              )
             )}
           </div>
         </main>

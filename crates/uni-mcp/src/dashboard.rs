@@ -24,6 +24,7 @@ use uni_core::Error;
 use uni_core::profile::Profile;
 use uni_core::secrets::SecretStore;
 
+use crate::apps::{self, App as McpClient};
 use crate::connectors::{Connectors, ServiceKind, ServiceState, WebdavLogin};
 use crate::login::{self, Progress};
 use crate::server::Needs;
@@ -265,6 +266,7 @@ fn router(app: App) -> Router {
         .route("/login/calendar", post(login_calendar))
         .route("/logout", post(logout))
         .route("/tools/try", post(try_tool))
+        .route("/apps/add", post(add_to_app))
         .layer(middleware::from_fn_with_state(app.clone(), require_key));
     Router::new()
         .nest("/api", api)
@@ -356,6 +358,7 @@ async fn state(State(app): State<App>) -> ApiResult {
         matches!(service.logged_in, Ok(true)) && *check != Check::Rejected
     };
 
+    let command = launch::command();
     let universities: Vec<Value> = Profile::builtin_all()?
         .into_iter()
         .map(|p| json!({ "id": p.id, "name": p.name, "color": p.color }))
@@ -405,7 +408,8 @@ async fn state(State(app): State<App>) -> ApiResult {
         "tools": tools,
         "custom_instructions": custom_instructions.unwrap_or_default(),
         "custom_instructions_limit": config::MAX_CUSTOM_INSTRUCTIONS_CHARS,
-        "command": launch::command(),
+        "apps": command.as_deref().map(apps::states).unwrap_or_default(),
+        "command": command,
         "version": env!("CARGO_PKG_VERSION"),
         "repository": env!("CARGO_PKG_REPOSITORY"),
         "browser_sign_in": scheme::SUPPORTED,
@@ -487,6 +491,21 @@ struct ServiceChoice {
 async fn logout(State(app): State<App>, Json(choice): Json<ServiceChoice>) -> ApiResult {
     login::logout(&app.connectors()?, &choice.service)?;
     app.checks().forget();
+    Ok(done())
+}
+
+#[derive(Deserialize)]
+struct AppChoice {
+    app: McpClient,
+}
+
+async fn add_to_app(Json(choice): Json<AppChoice>) -> ApiResult {
+    let command = launch::command()
+        .ok_or_else(|| ApiError("cannot tell where uniMCP is installed".into()))?;
+    // Starting another program can take a moment.
+    tokio::task::spawn_blocking(move || apps::add(choice.app, &command))
+        .await
+        .map_err(|e| ApiError(e.to_string()))??;
     Ok(done())
 }
 
