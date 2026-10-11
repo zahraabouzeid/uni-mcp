@@ -44,7 +44,6 @@ const LOGO: &[u8] = include_bytes!("../../../.github/logo.svg");
 
 type ToolResult = Result<ToolOutput, String>;
 
-/// What a tool hands back: text, and pictures the model looks at directly.
 #[derive(Debug)]
 pub struct ToolOutput {
     pub text: String,
@@ -72,7 +71,7 @@ pub struct UniServer {
 }
 
 // The doc comments on the argument fields are the parameter descriptions the
-// AI client sees.
+// MCP client sees.
 
 #[derive(Deserialize, schemars::JsonSchema)]
 struct CourseArgs {
@@ -305,7 +304,7 @@ impl ServerHandler for UniServer {
     }
 }
 
-/// How the server introduces itself; AI apps may show the name and the logo.
+/// How the server introduces itself; MCP clients may show the name and the logo.
 fn about() -> Implementation {
     let logo = format!("data:image/svg+xml;base64,{}", STANDARD.encode(LOGO));
     Implementation::new(env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"))
@@ -362,7 +361,6 @@ pub struct ToolInfo {
     pub needs: Needs,
 }
 
-/// What has to be there for a tool to work.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Needs {
     Nothing,
@@ -376,13 +374,11 @@ pub struct ParamInfo {
     pub name: String,
     pub description: String,
     pub required: bool,
-    /// The allowed values, if the parameter only takes certain ones.
     pub options: Vec<String>,
-    /// The value used when the parameter is left out.
     pub default: Option<String>,
 }
 
-/// The tools as the dashboard lists them, from the schema AI clients get.
+/// The tools as the dashboard lists them, from the schema MCP clients get.
 pub fn tools() -> Vec<ToolInfo> {
     UniServer::tool_router()
         .list_all()
@@ -438,7 +434,7 @@ fn params(schema: &serde_json::Map<String, Value>) -> Vec<ParamInfo> {
             }
         })
         .collect();
-    // The dashboard shows them in this order: what has to be filled in first.
+    // The dashboard shows them in this order: required parameters first.
     params.sort_by_key(|param| !param.required);
     params
 }
@@ -455,7 +451,7 @@ fn needs_of(tool: &str) -> Needs {
     }
 }
 
-/// Runs one tool the way an AI client would, for the Try button of the dashboard.
+/// Runs one tool the way an MCP client would, for the Try button of the dashboard.
 pub async fn try_tool(connectors: Connectors, name: &str, arguments: Value) -> ToolResult {
     let server = UniServer::new(connectors);
     match name {

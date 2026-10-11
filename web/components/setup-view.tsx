@@ -9,7 +9,7 @@ type Step = {
   snippet: (executable: string) => string;
 };
 
-// The name the AI app lists the server under.
+// The name MCP clients list the server under.
 const SERVER = "uniMCP";
 
 const APPS: { name: string; steps: Step[] }[] = [

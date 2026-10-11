@@ -1,5 +1,5 @@
 //! `unimcp`: the dashboard and commands for the student, and the MCP server
-//! their AI client talks to.
+//! their AI assistant talks to.
 
 mod config;
 mod connectors;
@@ -40,7 +40,7 @@ enum Command {
         #[arg(long)]
         dev: bool,
     },
-    /// Run the MCP server on stdio (this is what an AI client starts).
+    /// Run the MCP server on stdio. This is the command an MCP client starts.
     Serve,
     /// Log in to a service, e.g. `unimcp login moodle`. `unimcp status` lists them.
     Login { service: String },
@@ -93,10 +93,9 @@ async fn run(cli: Cli) -> Result<(), String> {
 
     let profile_id = match cli.profile {
         Some(id) => id,
-        None => config::load()
-            .map_err(|e| e.to_string())?
-            .profile
-            .ok_or("no university chosen yet; run `unimcp` in a terminal to set it up")?,
+        None => config::load().map_err(|e| e.to_string())?.profile.ok_or(
+            "no university selected yet; run `unimcp` to open the dashboard and select one",
+        )?,
     };
     let profile = Profile::builtin(&profile_id).map_err(|e| e.to_string())?;
     let connectors = Connectors::new(profile, secrets);
@@ -104,7 +103,7 @@ async fn run(cli: Cli) -> Result<(), String> {
     match command {
         Command::Dashboard { .. } => Ok(()),
         Command::Serve => {
-            // A broken config must not keep the AI app from its tools.
+            // A broken config must not keep the MCP client from its tools.
             let custom_instructions = config::load()
                 .map(|config| config.custom_instructions)
                 .unwrap_or_default();

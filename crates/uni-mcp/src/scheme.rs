@@ -5,7 +5,6 @@ use std::io;
 
 pub const SCHEME: &str = "unimcp";
 
-/// Whether [`register`] works on this system.
 pub const SUPPORTED: bool = cfg!(windows);
 
 /// Points the scheme at this executable, for the current user only.

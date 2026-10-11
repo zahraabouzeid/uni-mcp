@@ -1,6 +1,6 @@
 [package]
 name = "uni-mcp"
-description = "Read-only MCP server that connects AI apps to your university (courses, files, timetable)"
+description = "Read-only MCP server that connects AI assistants to your university (courses, files, timetable)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

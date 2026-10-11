@@ -8,7 +8,6 @@ use crate::model::{Assignment, CanteenMenu, Course, CourseFile, Document, Event,
 pub trait Courses: Send + Sync {
     async fn list_courses(&self) -> Result<Vec<Course>>;
     async fn list_course_files(&self, course_id: &str) -> Result<Vec<CourseFile>>;
-    /// `None` lists the assignments of all enrolled courses.
     async fn list_assignments(&self, course_id: Option<&str>) -> Result<Vec<Assignment>>;
     async fn read_file(&self, file_ref: &str, request: Request<'_>) -> Result<Document>;
 }

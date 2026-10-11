@@ -10,7 +10,6 @@ use uni_core::{Error, Result};
 pub struct Config {
     /// Id of the chosen university.
     pub profile: Option<String>,
-    /// What the student wants every AI app to know, in their own words.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_instructions: Option<String>,
 }
@@ -18,7 +17,6 @@ pub struct Config {
 /// They travel with every conversation, so they have to stay short.
 pub const MAX_CUSTOM_INSTRUCTIONS_CHARS: usize = 2000;
 
-/// Custom instructions as they are stored: trimmed, and `None` when nothing is left.
 pub fn custom_instructions(text: &str) -> Result<Option<String>> {
     let text = text.trim();
     if text.chars().count() > MAX_CUSTOM_INSTRUCTIONS_CHARS {

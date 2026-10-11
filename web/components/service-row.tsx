@@ -120,7 +120,7 @@ export function ServiceRow({ service, browserSignIn, onChanged }: Props) {
       {mode === "waiting" && (
         <DetailRow columns={SERVICE_COLUMNS.length}>
           <p className="text-muted">
-            Finish signing in in your browser, then allow it to open unimcp.
+            Complete the sign-in in your browser, then allow it to open uniMCP.
           </p>
         </DetailRow>
       )}
@@ -135,7 +135,7 @@ export function ServiceRow({ service, browserSignIn, onChanged }: Props) {
                 name="link"
                 type="password"
                 autoComplete="off"
-                title="The link you get when you publish your university calendar"
+                title="The link you receive when you publish your university calendar"
               />
             ) : (
               <>
