@@ -3,7 +3,7 @@ CREATE TABLE accounts (
     name TEXT NOT NULL,
     name_key TEXT NOT NULL UNIQUE,
     password TEXT NOT NULL,
-    owner INTEGER NOT NULL DEFAULT 0,
+    admin INTEGER NOT NULL DEFAULT 0,
     profile TEXT,
     custom_instructions TEXT,
     created INTEGER NOT NULL
