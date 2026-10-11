@@ -23,7 +23,7 @@ test("the owner sees everyone, and only members can be removed", async () => {
   render(<PeopleView />);
 
   expect(await screen.findByText("Zahraa")).toBeTruthy();
-  expect(screen.getByText("Owner")).toBeTruthy();
+  expect(screen.getByText("Admin")).toBeTruthy();
   expect(screen.getByText("Member")).toBeTruthy();
   expect(screen.getAllByRole("button", { name: "Remove" }).length).toBe(1);
 });

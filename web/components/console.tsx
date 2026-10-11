@@ -77,22 +77,26 @@ export function Console({ account }: { account?: Account }) {
   const university = state.universities.find((u) => u.id === state.selected);
   const connected = state.services.filter((s) => s.logged_in && !s.expired).length;
   type Entry = { view: View; label: string; count?: string };
-  const own: Entry[] = university
-    ? [
-        { view: "services", label: "Services", count: `${connected}/${state.services.length}` },
-        { view: "tools", label: "Tools", count: String(state.tools.length) },
-        ...(state.command ? [{ view: "setup", label: "Setup" } as Entry] : []),
-        { view: "settings", label: "Settings" },
-      ]
-    : [{ view: "services", label: "University" }];
-  const forOwner: Entry[] = account?.person.owner
+  // The owner of a server looks after it and has no university of their own there.
+  const admin = account?.person.owner ?? false;
+  const own: Entry[] = admin
+    ? []
+    : university
+      ? [
+          { view: "services", label: "Services", count: `${connected}/${state.services.length}` },
+          { view: "tools", label: "Tools", count: String(state.tools.length) },
+          ...(state.command ? [{ view: "setup", label: "Setup" } as Entry] : []),
+          { view: "settings", label: "Settings" },
+        ]
+      : [{ view: "services", label: "University" }];
+  const forAdmin: Entry[] = admin
     ? [
         { view: "people", label: "People" },
-        { view: "server", label: "Server" },
+        { view: "server", label: "Settings" },
       ]
     : [];
-  const nav = [...own, ...forOwner];
-  const shown = nav.some((item) => item.view === view) ? view : "services";
+  const nav = [...own, ...forAdmin];
+  const shown = nav.some((item) => item.view === view) ? view : nav[0].view;
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -110,7 +114,7 @@ export function Console({ account }: { account?: Account }) {
           <span className="font-bold">MCP</span>
         </p>
 
-        {(university || forOwner.length > 0) && (
+        {(university || admin) && (
           <nav className="mt-4 grid gap-0.5 px-3">
             {nav.map((item) => (
               <button
@@ -175,25 +179,27 @@ export function Console({ account }: { account?: Account }) {
           <h1 className="text-lg font-semibold">
             {nav.find((item) => item.view === shown)?.label}
           </h1>
-          <label>
-            <span className="sr-only">University</span>
-            <select
-              value={state.selected ?? ""}
-              onChange={(event) => chooseUniversity(event.target.value)}
-              className="h-8 max-w-64 cursor-pointer rounded-md border border-line bg-canvas px-2 outline-none focus:border-ink"
-            >
-              {!state.selected && (
-                <option value="" disabled>
-                  Select university
-                </option>
-              )}
-              {state.universities.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          {!admin && (
+            <label>
+              <span className="sr-only">University</span>
+              <select
+                value={state.selected ?? ""}
+                onChange={(event) => chooseUniversity(event.target.value)}
+                className="h-8 max-w-64 cursor-pointer rounded-md border border-line bg-canvas px-2 outline-none focus:border-ink"
+              >
+                {!state.selected && (
+                  <option value="" disabled>
+                    Select university
+                  </option>
+                )}
+                {state.universities.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
         </header>
 
         <main className="flex-1 overflow-auto px-10 py-8">

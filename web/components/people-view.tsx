@@ -65,7 +65,7 @@ export function PeopleView() {
         {people.map((person) => (
           <tr key={person.id}>
             <Cell className="font-medium">{person.name}</Cell>
-            <Cell className="text-muted">{person.owner ? "Owner" : "Member"}</Cell>
+            <Cell className="text-muted">{person.owner ? "Admin" : "Member"}</Cell>
             <ActionCell>
               {!person.owner && (
                 <Button onClick={() => remove(person.id)}>
