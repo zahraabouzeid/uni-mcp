@@ -25,6 +25,7 @@ export function ServiceRow({ service, browserSignIn, onChanged }: Props) {
   const name = service.name;
   const [mode, setMode] = useState<"idle" | "form" | "waiting" | "busy">("idle");
   const [error, setError] = useState<string | null>(service.error);
+  const connected = service.logged_in && !service.expired && !service.checking;
 
   useEffect(() => {
     if (mode !== "waiting") return;
@@ -94,14 +95,24 @@ export function ServiceRow({ service, browserSignIn, onChanged }: Props) {
           {mode === "waiting" ? (
             <Status ok={false}>Signing in</Status>
           ) : (
-            <Status ok={service.logged_in}>
-              {service.logged_in ? "Connected" : "Not connected"}
+            <Status ok={connected}>
+              {!service.logged_in
+                ? "Not connected"
+                : service.expired
+                  ? "Sign-in expired"
+                  : service.checking
+                    ? "Checking"
+                    : "Connected"}
             </Status>
           )}
         </Cell>
         <ActionCell>
           {mode === "waiting" || mode === "form" ? (
             <Button onClick={() => setMode("idle")}>Cancel</Button>
+          ) : service.expired ? (
+            <Button variant="primary" disabled={mode === "busy"} onClick={connect}>
+              Reconnect
+            </Button>
           ) : service.logged_in ? (
             <Button
               disabled={mode === "busy"}

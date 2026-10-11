@@ -14,6 +14,7 @@ type View = (typeof VIEWS)[number];
 const NEUTRAL = "#1f1f23";
 // unimcp also stops if these requests stop coming without a goodbye.
 const REFRESH_MS = 10_000;
+const CHECKING_MS = 1_500;
 
 export default function Console() {
   const [state, setState] = useState<DashboardState | null>(null);
@@ -45,6 +46,13 @@ export default function Console() {
     };
   }, [load]);
 
+  const checking = state?.services.some((s) => s.checking) ?? false;
+  useEffect(() => {
+    if (!checking) return;
+    const timer = setTimeout(load, CHECKING_MS);
+    return () => clearTimeout(timer);
+  }, [checking, state, load]);
+
   async function chooseUniversity(id: string) {
     try {
       await api("/university", { id });
@@ -59,7 +67,7 @@ export default function Console() {
   }
 
   const university = state.universities.find((u) => u.id === state.selected);
-  const connected = state.services.filter((s) => s.logged_in).length;
+  const connected = state.services.filter((s) => s.logged_in && !s.expired).length;
   const nav: { view: View; label: string; count?: string }[] = [
     { view: "services", label: "Services", count: `${connected}/${state.services.length}` },
     { view: "tools", label: "Tools", count: String(state.tools.length) },

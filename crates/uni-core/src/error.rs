@@ -7,7 +7,9 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub enum Error {
     #[error("not logged in to {0}; run `unimcp login {0}`")]
     NotLoggedIn(String),
-    #[error("{service} rejected the stored login; run `unimcp login {service}` again")]
+    #[error(
+        "{service} rejected the stored login, which has probably expired; connect {service} again on the uniMCP dashboard"
+    )]
     Auth { service: String },
     #[error("network error talking to {service}: {message}")]
     Network { service: String, message: String },
