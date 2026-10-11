@@ -375,7 +375,7 @@ where
         .map_err(text)?
     {
         let invite = accounts.invite(accounts::now()).map_err(text)?;
-        println!("No account yet. Create the owner's within a week at:");
+        println!("Create an admin account:");
         println!("{}", owner_link(address.port(), &invite));
     }
     println!("Press Ctrl+C to stop.");

@@ -107,7 +107,7 @@ fn owner(accounts: &Accounts, headers: &HeaderMap) -> Result<Person, Refusal> {
     if !person.owner {
         return Err(Refusal(
             StatusCode::FORBIDDEN,
-            "only the owner of the server can do this".into(),
+            "only the admin can do this".into(),
         ));
     }
     Ok(person)

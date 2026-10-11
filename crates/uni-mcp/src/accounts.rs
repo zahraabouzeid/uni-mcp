@@ -284,9 +284,7 @@ impl Accounts {
                 .map_err(sql)?;
             match owner {
                 None => Err(Error::InvalidInput("no such account".into())),
-                Some(true) => Err(Error::InvalidInput(
-                    "the owner of the server cannot be removed".into(),
-                )),
+                Some(true) => Err(Error::InvalidInput("the admin cannot be removed".into())),
                 Some(false) => {
                     connection
                         .execute("DELETE FROM accounts WHERE id = ?1", [id])

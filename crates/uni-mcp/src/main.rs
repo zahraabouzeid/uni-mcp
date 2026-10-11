@@ -191,7 +191,7 @@ async fn run_server(
             let now = accounts::now();
             if accounts.waits_for_its_owner(now).map_err(text)? {
                 let invite = accounts.invite(now).map_err(text)?;
-                println!("Create the owner's account within a week at:");
+                println!("Create an admin account:");
                 println!("{}", server::owner_link(port, &invite));
             }
             let launch = autostart::Launch::of_this_server(port, &folder).map_err(text)?;
