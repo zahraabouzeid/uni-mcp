@@ -35,6 +35,8 @@ export type DashboardState = {
   selected: string | null;
   services: Service[];
   tools: Tool[];
+  custom_instructions: string;
+  custom_instructions_limit: number;
   executable: string | null;
   version: string;
   repository: string;

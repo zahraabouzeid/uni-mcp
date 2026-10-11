@@ -103,7 +103,13 @@ async fn run(cli: Cli) -> Result<(), String> {
 
     match command {
         Command::Dashboard { .. } => Ok(()),
-        Command::Serve => server::serve(connectors).await,
+        Command::Serve => {
+            // A broken config must not keep the AI app from its tools.
+            let custom_instructions = config::load()
+                .map(|config| config.custom_instructions)
+                .unwrap_or_default();
+            server::serve(connectors, custom_instructions).await
+        }
         Command::Login { service } => login::login(&connectors, &service)
             .await
             .map_err(|e| e.to_string()),
