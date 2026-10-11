@@ -65,7 +65,7 @@ pub fn read(bytes: &[u8]) -> Result<Option<Office>> {
     Ok(None)
 }
 
-/// `None` if the picture is larger than an AI app accepts.
+/// `None` if the picture is larger than an MCP client accepts.
 pub fn picture(bytes: &[u8], name: &str) -> Result<Option<Vec<u8>>> {
     let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(unreadable)?;
     let file = archive.by_name(name).map_err(unreadable)?;

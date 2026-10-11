@@ -1,4 +1,4 @@
-//! Ready-made requests the student picks from a menu in their AI app.
+//! Prompt templates the student selects in their MCP client.
 
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{PromptMessage, Role};
@@ -7,8 +7,8 @@ use serde::Deserialize;
 
 use crate::server::UniServer;
 
-// The doc comments on the argument fields are what the AI app shows next to
-// each blank.
+// The doc comments on the argument fields are what the MCP client shows next
+// to each argument.
 
 #[derive(Deserialize, schemars::JsonSchema)]
 pub struct CourseArgs {
@@ -132,15 +132,18 @@ mod tests {
     }
 
     #[test]
-    fn offers_the_five_prompts_with_their_blanks() {
+    fn offers_the_five_prompts_with_their_arguments() {
         let mut prompts: Vec<(String, Vec<String>)> = UniServer::prompt_router()
             .list_all()
             .into_iter()
             .map(|prompt| {
-                let blanks = prompt.arguments.unwrap_or_default();
+                let arguments = prompt.arguments.unwrap_or_default();
                 (
                     prompt.name,
-                    blanks.into_iter().map(|blank| blank.name).collect(),
+                    arguments
+                        .into_iter()
+                        .map(|argument| argument.name)
+                        .collect(),
                 )
             })
             .collect();
@@ -153,9 +156,10 @@ mod tests {
             ("summarise_course", vec!["course"]),
         ];
         assert_eq!(prompts.len(), expected.len());
-        for ((name, blanks), (expected_name, expected_blanks)) in prompts.iter().zip(expected) {
+        for ((name, arguments), (expected_name, expected_arguments)) in prompts.iter().zip(expected)
+        {
             assert_eq!(name, expected_name);
-            assert_eq!(blanks, &expected_blanks);
+            assert_eq!(arguments, &expected_arguments);
         }
     }
 

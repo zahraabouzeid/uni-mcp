@@ -28,7 +28,6 @@ pub struct CourseFile {
     pub file_ref: String,
 }
 
-/// The content of a file: its text, and pictures where they were asked for.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Document {
     pub text: String,
@@ -47,7 +46,7 @@ pub struct Document {
 pub struct Image {
     pub mime_type: &'static str,
     pub data: Vec<u8>,
-    /// The PDF page this is a picture of.
+    /// The page or slide the picture belongs to.
     pub page: Option<usize>,
 }
 

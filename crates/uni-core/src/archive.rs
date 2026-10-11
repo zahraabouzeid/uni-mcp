@@ -1,5 +1,3 @@
-//! Zip archives: what is inside, and one file out of them.
-
 use std::io::{Cursor, Read};
 
 use zip::ZipArchive;

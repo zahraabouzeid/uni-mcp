@@ -96,7 +96,6 @@ impl IntoResponse for ApiError {
 
 type ApiResult = Result<Json<Value>, ApiError>;
 
-/// Whether [`open_detached`] works on this system.
 pub const DETACHABLE: bool = cfg!(windows);
 
 /// Starts the dashboard as a process of its own, without a window, and comes

@@ -16,7 +16,7 @@ pub const MAX_FILE_BYTES: usize = 50 * 1024 * 1024;
 pub const MAX_TEXT_BYTES: usize = 200 * 1024;
 /// Each page picture costs the model several times a page of text.
 pub const MAX_PAGE_IMAGES: usize = 5;
-/// AI apps refuse pictures much larger than this.
+/// MCP clients refuse pictures much larger than this.
 pub const MAX_PICTURE_BYTES: usize = 4 * 1024 * 1024;
 const PAGE_IMAGE_SIDE: f32 = 1400.0;
 const ZIP: &[u8] = b"PK\x03\x04";
@@ -143,7 +143,7 @@ fn image_type(bytes: &[u8]) -> Option<&'static str> {
     }
 }
 
-/// The pictures an AI app can take in, and how many had to be left out.
+/// The pictures an MCP client can take in, and how many had to be left out.
 fn showable(bytes: &[u8], names: &[String], page: Option<usize>) -> Result<(Vec<Image>, usize)> {
     let mut images = Vec::new();
     for name in names {
@@ -588,7 +588,6 @@ mod tests {
         assert!(text(&presentation, Some("4")).is_err());
     }
 
-    /// A presentation whose slides each place the given number of pictures.
     fn presentation(pictures_per_slide: &[usize]) -> Vec<u8> {
         let mut files: Vec<(String, Vec<u8>)> = Vec::new();
         for (index, count) in pictures_per_slide.iter().enumerate() {
