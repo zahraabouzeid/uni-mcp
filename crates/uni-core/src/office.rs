@@ -1,10 +1,12 @@
-//! Text from Word, PowerPoint and Excel files, which are zip archives of XML.
+//! Text and pictures from Word, PowerPoint and Excel files, which are zip
+//! archives of XML.
 
 use std::io::{Cursor, Read};
 
 use roxmltree::{Document as Xml, Node};
 use zip::ZipArchive;
 
+use crate::document::MAX_PICTURE_BYTES;
 use crate::{Error, Result};
 
 /// Most one unpacked part may hold, against archives built to exhaust memory.
@@ -14,11 +16,18 @@ const SLIDES: (&str, &str) = ("ppt/slides/slide", ".xml");
 const SHEETS: (&str, &str) = ("xl/worksheets/sheet", ".xml");
 
 pub enum Office {
-    Text(String),
+    Text(Part),
     Parts {
         unit: &'static str,
-        parts: Vec<String>,
+        parts: Vec<Part>,
     },
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Part {
+    pub text: String,
+    /// Archive names of the pictures placed in it, in reading order.
+    pub pictures: Vec<String>,
 }
 
 type Archive<'a> = ZipArchive<Cursor<&'a [u8]>>;
@@ -33,14 +42,14 @@ pub fn read(bytes: &[u8]) -> Result<Option<Office>> {
     let has = |name: &str| names.iter().any(|n| n == name);
 
     if has("word/document.xml") {
-        let xml = part(&mut archive, "word/document.xml")?;
-        return Ok(Some(Office::Text(paragraphs(&xml)?)));
+        let body = content(&mut archive, &names, "word/document.xml")?;
+        return Ok(Some(Office::Text(body)));
     }
     let slides = numbered(&names, SLIDES);
     if !slides.is_empty() {
         let parts = slides
             .iter()
-            .map(|name| paragraphs(&part(&mut archive, name)?))
+            .map(|name| content(&mut archive, &names, name))
             .collect::<Result<_>>()?;
         return Ok(Some(Office::Parts {
             unit: "slide",
@@ -54,6 +63,17 @@ pub fn read(bytes: &[u8]) -> Result<Option<Office>> {
         }));
     }
     Ok(None)
+}
+
+/// `None` if the picture is larger than an AI app accepts.
+pub fn picture(bytes: &[u8], name: &str) -> Result<Option<Vec<u8>>> {
+    let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(unreadable)?;
+    let file = archive.by_name(name).map_err(unreadable)?;
+    let mut data = Vec::new();
+    file.take(MAX_PICTURE_BYTES as u64 + 1)
+        .read_to_end(&mut data)
+        .map_err(unreadable)?;
+    Ok((data.len() <= MAX_PICTURE_BYTES).then_some(data))
 }
 
 fn unreadable(why: impl std::fmt::Display) -> Error {
@@ -85,8 +105,75 @@ fn is(node: Node, name: &str) -> bool {
     node.is_element() && node.tag_name().name() == name
 }
 
-fn paragraphs(xml: &str) -> Result<String> {
-    let doc = Xml::parse(xml).map_err(unreadable)?;
+fn content(archive: &mut Archive, names: &[String], name: &str) -> Result<Part> {
+    let xml = part(archive, name)?;
+    let doc = Xml::parse(&xml).map_err(unreadable)?;
+    let embedded: Vec<&str> = doc
+        .descendants()
+        .filter(|node| is(*node, "blip"))
+        .filter_map(|blip| blip.attributes().find(|a| a.name() == "embed"))
+        .map(|embed| embed.value())
+        .collect();
+    let pictures = match embedded.is_empty() {
+        true => Vec::new(),
+        false => pictures(archive, names, name, &embedded)?,
+    };
+    Ok(Part {
+        text: paragraphs(&doc),
+        pictures,
+    })
+}
+
+/// A part names its pictures by ids, which its relationships file resolves.
+fn pictures(
+    archive: &mut Archive,
+    names: &[String],
+    owner: &str,
+    ids: &[&str],
+) -> Result<Vec<String>> {
+    let (folder, file) = owner.rsplit_once('/').unwrap_or(("", owner));
+    let relations = format!("{folder}/_rels/{file}.rels");
+    if !names.contains(&relations) {
+        return Ok(Vec::new());
+    }
+    let xml = part(archive, &relations)?;
+    let doc = Xml::parse(&xml).map_err(unreadable)?;
+    let mut found = Vec::new();
+    for id in ids {
+        let target = doc
+            .descendants()
+            .find(|node| is(*node, "Relationship") && node.attribute("Id") == Some(id))
+            .filter(|relation| relation.attribute("TargetMode") != Some("External"))
+            .and_then(|relation| relation.attribute("Target"))
+            .map(|target| resolve(folder, target));
+        if let Some(name) = target
+            && names.contains(&name)
+            && !found.contains(&name)
+        {
+            found.push(name);
+        }
+    }
+    Ok(found)
+}
+
+fn resolve(folder: &str, target: &str) -> String {
+    if let Some(absolute) = target.strip_prefix('/') {
+        return absolute.to_owned();
+    }
+    let mut path: Vec<&str> = folder.split('/').filter(|step| !step.is_empty()).collect();
+    for step in target.split('/') {
+        match step {
+            ".." => {
+                path.pop();
+            }
+            "." | "" => {}
+            step => path.push(step),
+        }
+    }
+    path.join("/")
+}
+
+fn paragraphs(doc: &Xml) -> String {
     let lines: Vec<String> = doc
         .descendants()
         .filter(|node| is(*node, "p"))
@@ -97,7 +184,7 @@ fn paragraphs(xml: &str) -> Result<String> {
         })
         .filter(|line| !line.is_empty())
         .collect();
-    Ok(lines.join("\n"))
+    lines.join("\n")
 }
 
 fn runs(node: Node, line: &mut String) {
@@ -113,7 +200,7 @@ fn runs(node: Node, line: &mut String) {
     }
 }
 
-fn sheets(archive: &mut Archive, names: &[String]) -> Result<Vec<String>> {
+fn sheets(archive: &mut Archive, names: &[String]) -> Result<Vec<Part>> {
     let strings = match names.iter().any(|n| n == "xl/sharedStrings.xml") {
         true => shared_strings(&part(archive, "xl/sharedStrings.xml")?)?,
         false => Vec::new(),
@@ -131,9 +218,13 @@ fn sheets(archive: &mut Archive, names: &[String]) -> Result<Vec<String>> {
         .enumerate()
         .map(|(index, name)| {
             let rows = rows(&part(archive, name)?, &strings)?;
-            Ok(match titles.get(index) {
+            let text = match titles.get(index) {
                 Some(title) => format!("{title}\n{rows}"),
                 None => rows,
+            };
+            Ok(Part {
+                text,
+                ..Part::default()
             })
         })
         .collect()
@@ -199,15 +290,47 @@ pub mod testing {
     use zip::ZipWriter;
     use zip::write::SimpleFileOptions;
 
+    pub const PNG: &[u8] = &[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+
     pub fn archive(parts: &[(&str, &str)]) -> Vec<u8> {
+        let parts: Vec<(&str, &[u8])> = parts
+            .iter()
+            .map(|(name, content)| (*name, content.as_bytes()))
+            .collect();
+        archive_of(&parts)
+    }
+
+    pub fn archive_of(parts: &[(&str, &[u8])]) -> Vec<u8> {
         let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
         for (name, content) in parts {
             writer
                 .start_file(*name, SimpleFileOptions::default())
                 .expect("start");
-            writer.write_all(content.as_bytes()).expect("write");
+            writer.write_all(content).expect("write");
         }
         writer.finish().expect("finish").into_inner()
+    }
+
+    /// A slide or a Word body that places the pictures with these ids.
+    pub fn placing(root: &str, line: &str, ids: &[&str]) -> String {
+        let pictures: String = ids
+            .iter()
+            .map(|id| {
+                format!(r#"<p:pic><p:blipFill><a:blip r:embed="{id}"/></p:blipFill></p:pic>"#)
+            })
+            .collect();
+        format!(
+            r#"<{root} xmlns:w="urn:w" xmlns:p="urn:p" xmlns:a="urn:a" xmlns:r="urn:r"><a:p><a:r><a:t>{line}</a:t></a:r></a:p>{pictures}</{root}>"#
+        )
+    }
+
+    /// The relationships file that says where the pictures with these ids are.
+    pub fn relations(targets: &[(&str, &str)]) -> String {
+        let relations: String = targets
+            .iter()
+            .map(|(id, target)| format!(r#"<Relationship Id="{id}" Target="{target}"/>"#))
+            .collect();
+        format!(r#"<Relationships xmlns="urn:rel">{relations}</Relationships>"#)
     }
 
     pub fn slide(lines: &[&str]) -> String {
@@ -223,19 +346,21 @@ pub mod testing {
 
 #[cfg(test)]
 mod tests {
-    use super::testing::{archive, slide};
+    use super::testing::{PNG, archive, archive_of, placing, relations, slide};
     use super::*;
 
     fn text(office: Option<Office>) -> String {
         match office {
-            Some(Office::Text(text)) => text,
+            Some(Office::Text(body)) => body.text,
             _ => panic!("expected a text"),
         }
     }
 
     fn parts(office: Option<Office>) -> (&'static str, Vec<String>) {
         match office {
-            Some(Office::Parts { unit, parts }) => (unit, parts),
+            Some(Office::Parts { unit, parts }) => {
+                (unit, parts.into_iter().map(|part| part.text).collect())
+            }
             _ => panic!("expected parts"),
         }
     }
@@ -281,6 +406,52 @@ mod tests {
         let (unit, slides) = parts(read);
         assert_eq!(unit, "slide");
         assert_eq!(slides, ["Mechanics I", "Forces\nNewton's laws", "Summary"]);
+    }
+
+    #[test]
+    fn a_slide_lists_its_pictures_in_the_order_they_are_placed() {
+        let slide = placing(
+            "p:sld",
+            "Free body diagram",
+            &["rId3", "rId2", "rId9", "rId4"],
+        );
+        let relations = relations(&[
+            ("rId2", "../media/image1.png"),
+            ("rId3", "/ppt/media/image2.png"),
+            ("rId4", "../media/gone.png"),
+        ]);
+        let presentation = archive_of(&[
+            ("ppt/slides/slide1.xml", slide.as_bytes()),
+            ("ppt/slides/_rels/slide1.xml.rels", relations.as_bytes()),
+            ("ppt/media/image1.png", PNG),
+            ("ppt/media/image2.png", PNG),
+        ]);
+        let Some(Office::Parts { parts, .. }) = read(&presentation).expect("pptx") else {
+            panic!("expected slides");
+        };
+        assert_eq!(parts[0].text, "Free body diagram");
+        assert_eq!(
+            parts[0].pictures,
+            ["ppt/media/image2.png", "ppt/media/image1.png"]
+        );
+        let data = picture(&presentation, "ppt/media/image1.png").expect("picture");
+        assert_eq!(data.as_deref(), Some(PNG));
+    }
+
+    #[test]
+    fn a_picture_on_the_web_is_not_fetched() {
+        let slide = placing("p:sld", "Logo", &["rId2"]);
+        let relations = r#"<Relationships xmlns="urn:rel">
+            <Relationship Id="rId2" Target="https://example.org/logo.png" TargetMode="External"/>
+        </Relationships>"#;
+        let presentation = archive(&[
+            ("ppt/slides/slide1.xml", &slide),
+            ("ppt/slides/_rels/slide1.xml.rels", relations),
+        ]);
+        let Some(Office::Parts { parts, .. }) = read(&presentation).expect("pptx") else {
+            panic!("expected slides");
+        };
+        assert!(parts[0].pictures.is_empty());
     }
 
     #[test]

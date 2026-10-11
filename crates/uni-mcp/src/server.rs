@@ -113,10 +113,11 @@ impl PartArgs {
     }
 }
 
-/// `text` (the default) gives the text of the file. `pages` gives pictures
-/// of PDF pages instead, at most 5 per call, so set `pages` to a range like
-/// `1-5`: use it for diagrams, formulas, tables and scans, where the text is
-/// not enough.
+/// `text` (the default) gives the text of the file. `pages` gives pictures,
+/// at most 5 per call: of a PDF its pages instead of their text, so set
+/// `pages` to a range like `1-5`; of a presentation or a Word file the
+/// pictures placed in it, next to its text. Use it for diagrams, formulas,
+/// tables and scans, where the text is not enough.
 #[derive(Clone, Copy, Default, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 enum ViewArg {

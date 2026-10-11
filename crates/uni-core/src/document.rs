@@ -9,13 +9,15 @@ use hayro::vello_cpu::color::palette::css::WHITE;
 use hayro::{PixmapSettings, RenderCache, RenderSettings};
 
 use crate::model::{Document, Image};
-use crate::office::{self, Office};
+use crate::office::{self, Office, Part};
 use crate::{Error, Result, archive};
 
 pub const MAX_FILE_BYTES: usize = 50 * 1024 * 1024;
 pub const MAX_TEXT_BYTES: usize = 200 * 1024;
 /// Each page picture costs the model several times a page of text.
 pub const MAX_PAGE_IMAGES: usize = 5;
+/// AI apps refuse pictures much larger than this.
+pub const MAX_PICTURE_BYTES: usize = 4 * 1024 * 1024;
 const PAGE_IMAGE_SIDE: f32 = 1400.0;
 const ZIP: &[u8] = b"PK\x03\x04";
 
@@ -79,13 +81,19 @@ pub fn read(bytes: &[u8], request: Request) -> Result<Document> {
         });
     }
     if bytes.starts_with(ZIP) {
-        return match office::read(bytes)? {
-            Some(Office::Text(text)) => Ok(plain(&text)),
-            Some(Office::Parts { unit, parts }) => {
+        return match (office::read(bytes)?, view) {
+            (Some(Office::Text(body)), View::Text) => Ok(plain(&body.text)),
+            (Some(Office::Text(body)), View::Pages) => body_pictures(bytes, &body, pages),
+            (Some(Office::Parts { unit, parts }), View::Text) => {
                 let wanted = wanted(pages, parts.len())?;
-                Ok(numbered(unit, &parts, wanted))
+                let texts: Vec<String> = parts.into_iter().map(|part| part.text).collect();
+                Ok(numbered(unit, &texts, wanted))
             }
-            None => Ok(plain(&archive::list(bytes)?)),
+            (Some(Office::Parts { unit, parts }), View::Pages) => {
+                let wanted = wanted(pages, parts.len())?;
+                part_pictures(bytes, unit, &parts, wanted)
+            }
+            (None, _) => Ok(plain(&archive::list(bytes)?)),
         };
     }
     if bytes.starts_with(&[0xd0, 0xcf, 0x11, 0xe0]) {
@@ -133,6 +141,102 @@ fn image_type(bytes: &[u8]) -> Option<&'static str> {
         ] => Some("image/webp"),
         _ => None,
     }
+}
+
+/// The pictures an AI app can take in, and how many had to be left out.
+fn showable(bytes: &[u8], names: &[String], page: Option<usize>) -> Result<(Vec<Image>, usize)> {
+    let mut images = Vec::new();
+    for name in names {
+        let Some(data) = office::picture(bytes, name)? else {
+            continue;
+        };
+        if let Some(mime_type) = image_type(&data) {
+            images.push(Image {
+                mime_type,
+                data,
+                page,
+            });
+        }
+    }
+    let left_out = names.len() - images.len();
+    Ok((images, left_out))
+}
+
+/// Slides with their text and the pictures placed on them, for as many
+/// slides as fit into the picture limit.
+fn part_pictures(
+    bytes: &[u8],
+    unit: &str,
+    parts: &[Part],
+    wanted: RangeInclusive<usize>,
+) -> Result<Document> {
+    let mut text = String::new();
+    let mut images = Vec::new();
+    let mut last = None;
+    for number in wanted.clone() {
+        let part = &parts[number - 1];
+        let (mut shown, mut left_out) = showable(bytes, &part.pictures, Some(number))?;
+        if last.is_some() && images.len() + shown.len() > MAX_PAGE_IMAGES {
+            break;
+        }
+        if shown.len() > MAX_PAGE_IMAGES {
+            left_out += shown.len() - MAX_PAGE_IMAGES;
+            shown.truncate(MAX_PAGE_IMAGES);
+        }
+        let mut content = part.text.clone();
+        if left_out > 0 {
+            content.push_str(&format!(
+                "\n(pictures on this {unit} that cannot be shown: {left_out})"
+            ));
+        }
+        text.push_str(&marked(unit, number, &content));
+        images.append(&mut shown);
+        last = Some(number);
+    }
+    let kept = fitting(&text);
+    Ok(Document {
+        truncated: kept.len() < text.len() || last.is_some_and(|last| last < *wanted.end()),
+        text: kept.to_owned(),
+        page_count: Some(parts.len()),
+        pages: last.map(|last| format!("{}-{last}", wanted.start())),
+        images,
+    })
+}
+
+/// A Word file has no pages to pick from, so `pages` picks its pictures.
+fn body_pictures(bytes: &[u8], body: &Part, pages: Option<&str>) -> Result<Document> {
+    let count = body.pictures.len();
+    if count == 0 {
+        return Ok(plain(&body.text));
+    }
+    let wanted = match pages {
+        Some(pages) => parse_pages(pages, count)?,
+        None => 1..=count.min(MAX_PAGE_IMAGES),
+    };
+    if wanted.clone().count() > MAX_PAGE_IMAGES {
+        return Err(Error::InvalidInput(format!(
+            "the file has {count} pictures and view `pages` shows at most {MAX_PAGE_IMAGES} at a time; ask for a range such as {}-{}",
+            wanted.start(),
+            wanted.start() + MAX_PAGE_IMAGES - 1
+        )));
+    }
+    let (images, left_out) = showable(
+        bytes,
+        &body.pictures[wanted.start() - 1..*wanted.end()],
+        None,
+    )?;
+    let mut note = format!(
+        "[pictures {}-{} of {count}; `pages` picks others",
+        wanted.start(),
+        wanted.end()
+    );
+    if left_out > 0 {
+        note.push_str(&format!("; {left_out} of these cannot be shown"));
+    }
+    Ok(Document {
+        images,
+        ..plain(&format!("{note}]\n{}", body.text))
+    })
 }
 
 fn unreadable(why: impl std::fmt::Display) -> Error {
@@ -282,7 +386,7 @@ fn fitting(text: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::office::testing::{archive, slide};
+    use crate::office::testing::{PNG, archive, archive_of, placing, relations, slide};
 
     fn pdf(pages: &[&str]) -> Vec<u8> {
         let count = pages.len();
@@ -482,6 +586,134 @@ mod tests {
         assert_eq!(one.pages.as_deref(), Some("2-2"));
         assert!(one.text.contains("Forces") && !one.text.contains("Summary"));
         assert!(text(&presentation, Some("4")).is_err());
+    }
+
+    /// A presentation whose slides each place the given number of pictures.
+    fn presentation(pictures_per_slide: &[usize]) -> Vec<u8> {
+        let mut files: Vec<(String, Vec<u8>)> = Vec::new();
+        for (index, count) in pictures_per_slide.iter().enumerate() {
+            let number = index + 1;
+            let ids: Vec<String> = (1..=*count).map(|n| format!("rId{n}")).collect();
+            let targets: Vec<String> = (1..=*count)
+                .map(|n| format!("../media/s{number}p{n}.png"))
+                .collect();
+            let ids: Vec<&str> = ids.iter().map(String::as_str).collect();
+            let pairs: Vec<(&str, &str)> = ids
+                .iter()
+                .copied()
+                .zip(targets.iter().map(String::as_str))
+                .collect();
+            files.push((
+                format!("ppt/slides/slide{number}.xml"),
+                placing("p:sld", &format!("Slide {number}"), &ids).into_bytes(),
+            ));
+            files.push((
+                format!("ppt/slides/_rels/slide{number}.xml.rels"),
+                relations(&pairs).into_bytes(),
+            ));
+            for n in 1..=*count {
+                files.push((format!("ppt/media/s{number}p{n}.png"), PNG.to_vec()));
+            }
+        }
+        let files: Vec<(&str, &[u8])> = files
+            .iter()
+            .map(|(name, content)| (name.as_str(), content.as_slice()))
+            .collect();
+        archive_of(&files)
+    }
+
+    #[test]
+    fn slides_come_with_their_text_and_their_pictures() {
+        let document = pictures(&presentation(&[1, 0, 2]), None).expect("pptx");
+        assert_eq!(document.page_count, Some(3));
+        assert_eq!(document.pages.as_deref(), Some("1-3"));
+        assert!(!document.truncated);
+        assert!(document.text.contains("[slide 2]\nSlide 2"));
+        let slides: Vec<_> = document.images.iter().map(|image| image.page).collect();
+        assert_eq!(slides, [Some(1), Some(3), Some(3)]);
+        assert_eq!(document.images[0].mime_type, "image/png");
+    }
+
+    #[test]
+    fn slides_stop_where_the_picture_limit_is_reached() {
+        let bytes = presentation(&[3, 2, 1]);
+        let first = pictures(&bytes, None).expect("pptx");
+        assert_eq!(first.pages.as_deref(), Some("1-2"));
+        assert!(first.truncated);
+        assert_eq!(first.images.len(), MAX_PAGE_IMAGES);
+        assert!(!first.text.contains("[slide 3]"));
+
+        let rest = pictures(&bytes, Some("3")).expect("pptx");
+        assert_eq!(rest.pages.as_deref(), Some("3-3"));
+        assert!(!rest.truncated);
+        assert_eq!(rest.images.len(), 1);
+    }
+
+    #[test]
+    fn pictures_that_cannot_be_shown_are_counted() {
+        let crowded = pictures(&presentation(&[MAX_PAGE_IMAGES + 2]), None).expect("pptx");
+        assert_eq!(crowded.images.len(), MAX_PAGE_IMAGES);
+        assert!(crowded.text.contains("cannot be shown: 2"));
+
+        let slide = placing("p:sld", "Vector drawing", &["rId1"]);
+        let relations = relations(&[("rId1", "../media/drawing.emf")]);
+        let bytes = archive_of(&[
+            ("ppt/slides/slide1.xml", slide.as_bytes()),
+            ("ppt/slides/_rels/slide1.xml.rels", relations.as_bytes()),
+            ("ppt/media/drawing.emf", &[1, 0, 0, 0]),
+        ]);
+        let unknown = pictures(&bytes, None).expect("pptx");
+        assert!(unknown.images.is_empty());
+        assert!(unknown.text.contains("cannot be shown: 1"));
+    }
+
+    #[test]
+    fn a_word_document_hands_over_its_pictures_a_few_at_a_time() {
+        let ids: Vec<String> = (1..=7).map(|n| format!("rId{n}")).collect();
+        let targets: Vec<String> = (1..=7).map(|n| format!("media/image{n}.png")).collect();
+        let ids: Vec<&str> = ids.iter().map(String::as_str).collect();
+        let pairs: Vec<(&str, &str)> = ids
+            .iter()
+            .copied()
+            .zip(targets.iter().map(String::as_str))
+            .collect();
+        let body = placing("w:document", "Lab report", &ids);
+        let relations = relations(&pairs);
+        let mut files: Vec<(String, Vec<u8>)> = vec![
+            ("word/document.xml".into(), body.into_bytes()),
+            (
+                "word/_rels/document.xml.rels".into(),
+                relations.into_bytes(),
+            ),
+        ];
+        for target in &targets {
+            files.push((format!("word/{target}"), PNG.to_vec()));
+        }
+        let files: Vec<(&str, &[u8])> = files
+            .iter()
+            .map(|(name, content)| (name.as_str(), content.as_slice()))
+            .collect();
+        let bytes = archive_of(&files);
+
+        let first = pictures(&bytes, None).expect("docx");
+        assert_eq!(first.images.len(), MAX_PAGE_IMAGES);
+        assert!(first.text.starts_with("[pictures 1-5 of 7"));
+        assert!(first.text.ends_with("Lab report"));
+
+        let rest = pictures(&bytes, Some("6-7")).expect("docx");
+        assert_eq!(rest.images.len(), 2);
+        assert!(pictures(&bytes, Some("1-7")).is_err());
+        assert!(text(&bytes, None).expect("docx").images.is_empty());
+    }
+
+    #[test]
+    fn an_office_file_without_pictures_is_just_its_text() {
+        let xml = r#"<w:document xmlns:w="urn:w"><w:body>
+            <w:p><w:r><w:t>Exercise sheet 1</w:t></w:r></w:p>
+        </w:body></w:document>"#;
+        let document = pictures(&archive(&[("word/document.xml", xml)]), None).expect("docx");
+        assert_eq!(document.text, "Exercise sheet 1");
+        assert!(document.images.is_empty());
     }
 
     #[test]
