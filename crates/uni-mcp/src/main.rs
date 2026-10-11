@@ -44,6 +44,11 @@ enum Command {
     },
     /// Run the MCP server on stdio. This is the command an MCP client starts.
     Serve,
+    /// Run the MCP server over HTTP, reachable from this computer only.
+    Server {
+        #[arg(long, default_value_t = 8787)]
+        port: u16,
+    },
     /// Log in to a service, e.g. `unimcp login moodle`. `unimcp status` lists them.
     Login { service: String },
     /// Receives the sign-in link from the browser; not meant to be run by hand.
@@ -100,16 +105,20 @@ async fn run(cli: Cli) -> Result<(), String> {
         )?,
     };
     let profile = Profile::builtin(&profile_id).map_err(|e| e.to_string())?;
-    let connectors = Connectors::new(profile, secrets);
+    let connectors = Connectors::new(profile.clone(), secrets.clone());
+    // A broken config must not keep the MCP client from its tools.
+    let custom_instructions = || {
+        config::load()
+            .map(|config| config.custom_instructions)
+            .unwrap_or_default()
+    };
 
     match command {
         Command::Dashboard { .. } => Ok(()),
-        Command::Serve => {
-            // A broken config must not keep the MCP client from its tools.
-            let custom_instructions = config::load()
-                .map(|config| config.custom_instructions)
-                .unwrap_or_default();
-            server::serve(connectors, custom_instructions).await
+        Command::Serve => server::serve(connectors, custom_instructions()).await,
+        Command::Server { port } => {
+            let connectors = move || Connectors::new(profile.clone(), secrets.clone());
+            server::serve_http(port, connectors, custom_instructions()).await
         }
         Command::Login { service } => login::login(&connectors, &service)
             .await
