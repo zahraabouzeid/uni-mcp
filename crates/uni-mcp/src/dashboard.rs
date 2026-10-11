@@ -27,7 +27,7 @@ use uni_core::secrets::SecretStore;
 use crate::connectors::{Connectors, ServiceKind, ServiceState, WebdavLogin};
 use crate::login::{self, Progress};
 use crate::server::Needs;
-use crate::{config, scheme, server};
+use crate::{config, launch, scheme, server};
 
 static PAGE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../web/out");
 const KEY_HEADER: &str = "x-unimcp-key";
@@ -405,7 +405,7 @@ async fn state(State(app): State<App>) -> ApiResult {
         "tools": tools,
         "custom_instructions": custom_instructions.unwrap_or_default(),
         "custom_instructions_limit": config::MAX_CUSTOM_INSTRUCTIONS_CHARS,
-        "executable": std::env::current_exe().ok().map(|exe| exe.display().to_string()),
+        "command": launch::command(),
         "version": env!("CARGO_PKG_VERSION"),
         "repository": env!("CARGO_PKG_REPOSITORY"),
         "browser_sign_in": scheme::SUPPORTED,

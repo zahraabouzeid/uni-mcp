@@ -6,11 +6,14 @@ import { Button, CodeBlock } from "./ui";
 type Step = {
   title: string;
   hint?: string;
-  snippet: (executable: string) => string;
+  snippet: (command: string) => string;
 };
 
 // The name MCP clients list the server under.
 const SERVER = "uniMCP";
+
+// A bare name, as after the installer, needs no quotes; a path may hold spaces.
+const forShell = (command: string) => (/[\s\\/]/.test(command) ? `"${command}"` : command);
 
 const APPS: { name: string; steps: Step[] }[] = [
   {
@@ -19,12 +22,8 @@ const APPS: { name: string; steps: Step[] }[] = [
       {
         title: "Config file",
         hint: "Settings > Developer > Edit Config, then restart.",
-        snippet: (executable) =>
-          JSON.stringify(
-            { mcpServers: { [SERVER]: { command: executable, args: ["serve"] } } },
-            null,
-            2,
-          ),
+        snippet: (command) =>
+          JSON.stringify({ mcpServers: { [SERVER]: { command, args: ["serve"] } } }, null, 2),
       },
     ],
   },
@@ -33,7 +32,7 @@ const APPS: { name: string; steps: Step[] }[] = [
     steps: [
       {
         title: "Terminal",
-        snippet: (executable) => `claude mcp add ${SERVER} -- "${executable}" serve`,
+        snippet: (command) => `claude mcp add ${SERVER} -- ${forShell(command)} serve`,
       },
     ],
   },
@@ -42,7 +41,7 @@ const APPS: { name: string; steps: Step[] }[] = [
     steps: [
       {
         title: "Terminal",
-        snippet: (executable) => `codex mcp add ${SERVER} -- "${executable}" serve`,
+        snippet: (command) => `codex mcp add ${SERVER} -- ${forShell(command)} serve`,
       },
     ],
   },
@@ -51,13 +50,13 @@ const APPS: { name: string; steps: Step[] }[] = [
     steps: [
       {
         title: "Command",
-        snippet: (executable) => `"${executable}" serve`,
+        snippet: (command) => `${forShell(command)} serve`,
       },
     ],
   },
 ];
 
-export function SetupView({ executable }: { executable: string }) {
+export function SetupView({ command }: { command: string }) {
   const [selected, setSelected] = useState(0);
   const app = APPS[selected];
 
@@ -84,7 +83,7 @@ export function SetupView({ executable }: { executable: string }) {
 
       <div className="grid gap-8">
         {app.steps.map((step) => (
-          <Snippet key={`${app.name}:${step.title}`} step={step} code={step.snippet(executable)} />
+          <Snippet key={`${app.name}:${step.title}`} step={step} code={step.snippet(command)} />
         ))}
       </div>
     </>

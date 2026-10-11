@@ -219,7 +219,7 @@ export default function Console() {
                 onSaved={load}
               />
             ) : (
-              state.executable && <SetupView executable={state.executable} />
+              state.command && <SetupView command={state.command} />
             )}
           </div>
         </main>
