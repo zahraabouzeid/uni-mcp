@@ -30,6 +30,7 @@ toml.workspace = true
 uni-core.workspace = true
 uni-ical.workspace = true
 uni-moodle.workspace = true
+uni-openmensa.workspace = true
 uni-webdav.workspace = true
 
 [build-dependencies]

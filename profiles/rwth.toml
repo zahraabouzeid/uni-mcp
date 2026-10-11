@@ -1,6 +1,7 @@
 id = "rwth"
 name = "RWTH Aachen University"
 color = "#00549f"
+timezone = "Europe/Berlin"
 
 [moodle]
 base_url = "https://moodle.rwth-aachen.de"
@@ -13,4 +14,17 @@ files_url = "https://rwth-aachen.sciebo.de/remote.php/dav/files/{user}/"
 # RWTHonline: the iCal link from publishing the personal calendar.
 [calendar]
 host = "online.rwth-aachen.de"
-timezone = "Europe/Berlin"
+
+# Studierendenwerk Aachen, as listed on openmensa.org.
+[canteens]
+api = "https://openmensa.org/api/v2"
+list = [
+    { id = 95, name = "Mensa Ahorn" },
+    { id = 96, name = "Mensa Vita" },
+    { id = 97, name = "Mensa Bayernallee" },
+    { id = 98, name = "Mensa EUPS" },
+    { id = 1912, name = "Mensa Bohr 4" },
+    { id = 94, name = "Bistro Templergraben" },
+    { id = 93, name = "Forum Cafete" },
+    { id = 99, name = "Gastro Goethe" },
+]

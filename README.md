@@ -21,6 +21,7 @@ Unofficial, and not affiliated with any university.
 | `list_assignments`  | Assignments and their deadlines                  |
 | `read_course_file`  | A course file, in the formats listed below       |
 | `list_events`       | Your timetable: lectures, exercises, exam dates  |
+| `list_canteen_menu` | What the canteens serve, with prices and allergens |
 | `list_files`        | A folder in your cloud storage                   |
 | `read_file`         | A file from your cloud storage, same formats     |
 | `status`            | Which services are connected                     |
@@ -58,13 +59,14 @@ them:
 - **Local.** Your data goes from the university straight to your computer.
 - **No university password.** Moodle signs you in on the university's own page,
   cloud storage uses an app password, the calendar a link you publish yourself.
+  The canteen menu is public and needs no login.
 - **Logins live in your system keyring**, and never pass through the AI.
 
 ## Universities
 
-| University             | Courses | Cloud storage | Timetable  |
-| ---------------------- | ------- | ------------- | ---------- |
-| RWTH Aachen University | Moodle  | Sciebo        | RWTHonline |
+| University             | Courses | Cloud storage | Timetable  | Canteens  |
+| ---------------------- | ------- | ------------- | ---------- | --------- |
+| RWTH Aachen University | Moodle  | Sciebo        | RWTHonline | OpenMensa |
 
 A university is one file in [`profiles`](profiles). To add yours, see
 [CONTRIBUTING.md](CONTRIBUTING.md).

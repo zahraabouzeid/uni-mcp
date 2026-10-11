@@ -145,6 +145,14 @@ struct EventArgs {
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
+struct MenuArgs {
+    /// The day as `YYYY-MM-DD`. Omit for today.
+    date: Option<String>,
+    /// Only canteens whose name contains this text. Omit for all of them.
+    canteen: Option<String>,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
 struct PathArgs {
     /// Path inside the file store, e.g. `Uni/Analysis`. Empty or omitted means the top folder.
     #[serde(default)]
@@ -237,6 +245,18 @@ impl UniServer {
     }
 
     #[tool(
+        description = "List what the university's canteens serve on one day, with prices and notes on allergens and labels such as vegan. A canteen without meals is closed that day or has not published its menu yet.",
+        annotations(read_only_hint = true)
+    )]
+    async fn list_canteen_menu(&self, Parameters(args): Parameters<MenuArgs>) -> ToolResult {
+        let canteens = self.connectors.canteens().map_err(text)?;
+        let menus = canteens
+            .menus(args.date.as_deref(), args.canteen.as_deref())
+            .await;
+        render("menus", menus)
+    }
+
+    #[tool(
         description = "List a folder in the student's cloud storage.",
         annotations(read_only_hint = true)
     )]
@@ -320,8 +340,16 @@ pub struct ToolInfo {
     pub name: String,
     pub description: String,
     pub params: Vec<ParamInfo>,
-    /// The service the tool reads from; `None` if it needs no login.
-    pub service: Option<ServiceKind>,
+    pub needs: Needs,
+}
+
+/// What has to be there for a tool to work.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Needs {
+    Nothing,
+    Login(ServiceKind),
+    /// Offered by the university, without a login.
+    Canteens,
 }
 
 #[derive(Serialize)]
@@ -342,7 +370,7 @@ pub fn tools() -> Vec<ToolInfo> {
         .into_iter()
         .map(|tool| ToolInfo {
             params: params(&tool.input_schema),
-            service: service_of(&tool.name),
+            needs: needs_of(&tool.name),
             name: tool.name.to_string(),
             description: tool.description.map(|d| d.to_string()).unwrap_or_default(),
         })
@@ -396,14 +424,15 @@ fn params(schema: &serde_json::Map<String, Value>) -> Vec<ParamInfo> {
     params
 }
 
-fn service_of(tool: &str) -> Option<ServiceKind> {
+fn needs_of(tool: &str) -> Needs {
     match tool {
         "list_courses" | "list_course_files" | "list_assignments" | "read_course_file" => {
-            Some(ServiceKind::Moodle)
+            Needs::Login(ServiceKind::Moodle)
         }
-        "list_files" | "read_file" => Some(ServiceKind::Webdav),
-        "list_events" => Some(ServiceKind::Calendar),
-        _ => None,
+        "list_files" | "read_file" => Needs::Login(ServiceKind::Webdav),
+        "list_events" => Needs::Login(ServiceKind::Calendar),
+        "list_canteen_menu" => Needs::Canteens,
+        _ => Needs::Nothing,
     }
 }
 
@@ -420,6 +449,7 @@ pub async fn try_tool(connectors: Connectors, name: &str, arguments: Value) -> T
         "list_assignments" => server.list_assignments(parse(arguments)?).await,
         "read_course_file" => server.read_course_file(parse(arguments)?).await,
         "list_events" => server.list_events(parse(arguments)?).await,
+        "list_canteen_menu" => server.list_canteen_menu(parse(arguments)?).await,
         "list_files" => server.list_files(parse(arguments)?).await,
         "read_file" => server.read_file(parse(arguments)?).await,
         _ => Err(format!("{UNKNOWN_TOOL} `{name}`")),
@@ -464,15 +494,29 @@ mod tests {
     }
 
     #[test]
-    fn every_tool_but_status_belongs_to_a_service() {
+    fn only_status_works_without_anything() {
         for tool in tools() {
             assert_eq!(
-                tool.service.is_none(),
+                tool.needs == Needs::Nothing,
                 tool.name == "status",
                 "{}",
                 tool.name
             );
         }
+    }
+
+    #[tokio::test]
+    async fn the_canteen_tool_says_when_a_university_has_none() {
+        let server = UniServer::new(connectors());
+        let args = MenuArgs {
+            date: None,
+            canteen: None,
+        };
+        let error = server
+            .list_canteen_menu(Parameters(args))
+            .await
+            .expect_err("no canteens");
+        assert!(error.contains("canteen menus"), "{error}");
     }
 
     #[test]

@@ -2,7 +2,7 @@ use async_trait::async_trait;
 
 use crate::Result;
 use crate::document::Request;
-use crate::model::{Assignment, Course, CourseFile, Document, Event, FileEntry};
+use crate::model::{Assignment, CanteenMenu, Course, CourseFile, Document, Event, FileEntry};
 
 #[async_trait]
 pub trait Courses: Send + Sync {
@@ -24,6 +24,13 @@ pub trait Calendar: Send + Sync {
         to: Option<&str>,
         search: Option<&str>,
     ) -> Result<Vec<Event>>;
+}
+
+#[async_trait]
+pub trait Canteens: Send + Sync {
+    /// The menus of `date` (`YYYY-MM-DD`, today by default), for every
+    /// canteen or only those whose name contains `canteen`.
+    async fn menus(&self, date: Option<&str>, canteen: Option<&str>) -> Result<Vec<CanteenMenu>>;
 }
 
 #[async_trait]

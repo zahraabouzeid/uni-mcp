@@ -1,0 +1,18 @@
+[package]
+name = "uni-openmensa"
+description = "Canteen menu connector for uni-mcp (OpenMensa API), read-only"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+futures-util = "0.3"
+jiff = "0.2"
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uni-core.workspace = true
+
+[lints]
+workspace = true

@@ -25,10 +25,12 @@ use uni_core::secrets::SecretStore;
 
 use crate::connectors::{Connectors, WebdavLogin};
 use crate::login::{self, Progress};
+use crate::server::Needs;
 use crate::{config, scheme, server};
 
 static PAGE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../web/out");
 const KEY_HEADER: &str = "x-unimcp-key";
+const CANTEENS: &str = "Canteens";
 /// The page asks for its state every few seconds, but browsers slow that down
 /// to once a minute in background tabs.
 const PAGE_GONE_AFTER: Duration = Duration::from_secs(150);
@@ -258,9 +260,12 @@ async fn page(uri: Uri) -> Response {
 
 async fn state(State(app): State<App>) -> ApiResult {
     let selected = config::load()?.profile;
-    let services = match &selected {
-        Some(_) => app.connectors()?.services(),
-        None => Vec::new(),
+    let (services, canteens) = match &selected {
+        Some(_) => {
+            let connectors = app.connectors()?;
+            (connectors.services(), connectors.offers_canteens())
+        }
+        None => (Vec::new(), false),
     };
 
     let universities: Vec<Value> = Profile::builtin_all()?
@@ -270,14 +275,22 @@ async fn state(State(app): State<App>) -> ApiResult {
     let tools: Vec<Value> = server::tools()
         .into_iter()
         .map(|tool| {
-            let service = services.iter().find(|s| Some(s.kind) == tool.service);
-            let available =
-                tool.service.is_none() || service.is_some_and(|s| matches!(s.logged_in, Ok(true)));
+            let (service, available) = match tool.needs {
+                Needs::Nothing => (None, true),
+                Needs::Login(kind) => {
+                    let service = services.iter().find(|s| s.kind == kind);
+                    (
+                        service.map(|s| s.name.as_str()),
+                        service.is_some_and(|s| matches!(s.logged_in, Ok(true))),
+                    )
+                }
+                Needs::Canteens => (canteens.then_some(CANTEENS), canteens),
+            };
             json!({
                 "name": tool.name,
                 "description": tool.description,
                 "params": tool.params,
-                "service": service.map(|s| &s.name),
+                "service": service,
                 "available": available,
             })
         })
