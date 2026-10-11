@@ -26,6 +26,27 @@ fn command_for(program: &Path, folders: impl IntoIterator<Item = PathBuf>) -> St
     }
 }
 
+/// The file a command name stands for, as a terminal would find it.
+pub fn find(name: &str) -> Option<PathBuf> {
+    find_in(name, search_path())
+}
+
+fn find_in(name: &str, folders: impl IntoIterator<Item = PathBuf>) -> Option<PathBuf> {
+    let endings: &[&str] = if cfg!(windows) {
+        &["exe", "cmd", "bat"]
+    } else {
+        &[""]
+    };
+    folders
+        .into_iter()
+        .flat_map(|folder| {
+            endings
+                .iter()
+                .map(move |ending| folder.join(name).with_extension(ending))
+        })
+        .find(|file| file.is_file())
+}
+
 fn search_path() -> Vec<PathBuf> {
     let mut folders: Vec<PathBuf> = std::env::var_os("PATH")
         .map(|path| std::env::split_paths(&path).collect())
@@ -80,6 +101,25 @@ mod tests {
 
         fs::remove_dir_all(installed).expect("clean up");
         fs::remove_dir_all(elsewhere).expect("clean up");
+    }
+
+    #[test]
+    fn a_command_is_found_in_the_first_folder_that_has_it() {
+        let empty = folder("empty");
+        let tools = folder("tools");
+        let file = if cfg!(windows) {
+            "claude.cmd"
+        } else {
+            "claude"
+        };
+        fs::write(tools.join(file), "").expect("command");
+
+        let found = find_in("claude", [empty.clone(), tools.clone()]);
+        assert_eq!(found, Some(tools.join(file)));
+        assert_eq!(find_in("codex", [empty.clone(), tools.clone()]), None);
+
+        fs::remove_dir_all(empty).expect("clean up");
+        fs::remove_dir_all(tools).expect("clean up");
     }
 
     #[test]
