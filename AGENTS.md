@@ -6,8 +6,9 @@ university services: courses, files and timetable.
 ## Rules
 
 - **Read-only.** No tool may change, send, submit or delete anything.
-- **Secrets stay in the OS keyring.** Never in files, logs, error messages or
-  tool output, and never asked for in the chat.
+- **Secrets stay in the OS keyring.** In server mode, where there is none, they
+  are stored encrypted in the server's database. Never in logs, error messages
+  or tool output, and never asked for in the chat.
 - **Logins only go to the university's own hosts**, as named in its profile.
 - **Nothing about one university in code.** That belongs in `profiles/*.toml`.
 - **Official interfaces only.** No scraping.

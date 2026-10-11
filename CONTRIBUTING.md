@@ -6,8 +6,9 @@ data, so a few rules are strict.
 ## Rules
 
 1. **Safety first.** Every tool is read-only: nothing may change, send, submit
-   or delete anything. Logins stay in the system keyring and never appear in
-   files, logs, error messages or tool output. They are only ever sent to the
+   or delete anything. Logins stay in the system keyring, or in server mode
+   encrypted in the server's database, and never appear in logs, error
+   messages or tool output. They are only ever sent to the
    university's own hosts.
 2. **No hardcoding.** Nothing about one university belongs in code. Addresses,
    names and colours go in `profiles/*.toml`.
