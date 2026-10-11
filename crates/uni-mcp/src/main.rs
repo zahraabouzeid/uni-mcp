@@ -13,6 +13,7 @@ mod login;
 mod prompts;
 mod scheme;
 mod server;
+mod vault;
 
 use std::io::IsTerminal;
 use std::path::PathBuf;

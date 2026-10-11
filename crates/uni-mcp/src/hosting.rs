@@ -15,6 +15,7 @@ use uni_core::Error;
 
 use crate::accounts::{self, Accounts, Person, SESSION_VALID_SECONDS};
 use crate::autostart::{self, Launch};
+use crate::vault::Vault;
 
 const COOKIE_NAME: &str = "unimcp_session";
 
@@ -34,20 +35,23 @@ impl IntoResponse for Refusal {
 
 type Answer = Result<Response, Refusal>;
 
-pub fn api(accounts: Arc<Accounts>, launch: Launch) -> Router {
+pub fn api(accounts: Arc<Accounts>, vault: Arc<Vault>, launch: Launch) -> Router {
     let settings = Router::new()
         .route("/server", get(server_settings))
         .route("/server/autostart", post(set_autostart))
         .with_state((accounts.clone(), Arc::new(launch)));
-    Router::new()
-        .route("/accept", post(accept))
-        .route("/login", post(log_in))
-        .route("/logout", post(log_out))
-        .route("/me", get(me))
-        .route("/people", get(people))
+    let removal = Router::new()
         .route("/people/remove", post(remove))
+        .with_state((accounts.clone(), vault));
+    Router::new()
+        .route("/account/accept", post(accept))
+        .route("/account/login", post(log_in))
+        .route("/account/logout", post(log_out))
+        .route("/account/me", get(me))
+        .route("/people", get(people))
         .route("/invites", post(invite))
         .with_state(accounts)
+        .merge(removal)
         .merge(settings)
 }
 
@@ -92,9 +96,13 @@ fn session_of(headers: &HeaderMap) -> Option<&str> {
         .find_map(|cookie| cookie.trim().strip_prefix(COOKIE_NAME)?.strip_prefix('='))
 }
 
+/// Whose browser a request comes from, if it is logged in.
+pub(crate) fn person_in(accounts: &Accounts, headers: &HeaderMap) -> Option<Person> {
+    session_of(headers).and_then(|session| accounts.person_of(session, accounts::now()))
+}
+
 fn logged_in(accounts: &Accounts, headers: &HeaderMap) -> Result<Person, Refusal> {
-    session_of(headers)
-        .and_then(|session| accounts.person_of(session, accounts::now()))
+    person_in(accounts, headers)
         .ok_or_else(|| Refusal(StatusCode::UNAUTHORIZED, "log in first".into()))
 }
 
@@ -181,12 +189,13 @@ struct Removal {
 }
 
 async fn remove(
-    State(accounts): State<Arc<Accounts>>,
+    State((accounts, vault)): State<(Arc<Accounts>, Arc<Vault>)>,
     headers: HeaderMap,
     Json(body): Json<Removal>,
 ) -> Answer {
     owner(&accounts, &headers)?;
     accounts.remove(&body.id, accounts::now())?;
+    vault.forget(&body.id)?;
     Ok(Json(json!({ "ok": true })).into_response())
 }
 
@@ -205,6 +214,14 @@ mod tests {
     use super::*;
     use crate::accounts::testing::{PASSWORD, accounts};
 
+    /// One vault for every test here; none of them stores a login.
+    fn vault() -> Arc<Vault> {
+        static VAULT: std::sync::OnceLock<Arc<Vault>> = std::sync::OnceLock::new();
+        VAULT
+            .get_or_init(|| Arc::new(crate::vault::testing::vault("api").0))
+            .clone()
+    }
+
     async fn call(
         accounts: &Arc<Accounts>,
         method: &str,
@@ -220,10 +237,14 @@ mod tests {
             request = request.header(COOKIE, format!("other=1; {COOKIE_NAME}={session}"));
         }
         let request = request.body(Body::from(body.to_string())).expect("request");
-        let response = api(accounts.clone(), crate::autostart::testing::launch())
-            .oneshot(request)
-            .await
-            .expect("response");
+        let response = api(
+            accounts.clone(),
+            vault(),
+            crate::autostart::testing::launch(),
+        )
+        .oneshot(request)
+        .await
+        .expect("response");
         let status = response.status();
         let cookie = response
             .headers()
@@ -254,18 +275,26 @@ mod tests {
         let invite = accounts.invite(accounts::now()).expect("invite");
 
         let join = json!({ "invite": invite, "name": "Zahraa", "password": PASSWORD });
-        let (status, cookie, body) = call(&accounts, "POST", "/accept", None, join).await;
+        let (status, cookie, body) = call(&accounts, "POST", "/account/accept", None, join).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["person"]["owner"], true);
         let session = session_in(cookie);
 
-        let (status, _, body) = call(&accounts, "GET", "/me", Some(&session), json!({})).await;
+        let (status, _, body) =
+            call(&accounts, "GET", "/account/me", Some(&session), json!({})).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["person"]["name"], "Zahraa");
 
-        let (status, _, _) = call(&accounts, "POST", "/logout", Some(&session), json!({})).await;
+        let (status, _, _) = call(
+            &accounts,
+            "POST",
+            "/account/logout",
+            Some(&session),
+            json!({}),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
-        let (status, _, _) = call(&accounts, "GET", "/me", Some(&session), json!({})).await;
+        let (status, _, _) = call(&accounts, "GET", "/account/me", Some(&session), json!({})).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
         std::fs::remove_dir_all(folder).expect("clean up");
     }
@@ -274,14 +303,18 @@ mod tests {
     async fn nothing_works_without_logging_in() {
         let (accounts, folder) = accounts("api-anonymous");
         let accounts = Arc::new(accounts);
-        for (method, path) in [("GET", "/me"), ("GET", "/people"), ("POST", "/invites")] {
+        for (method, path) in [
+            ("GET", "/account/me"),
+            ("GET", "/people"),
+            ("POST", "/invites"),
+        ] {
             let (status, _, _) = call(&accounts, method, path, None, json!({})).await;
             assert_eq!(status, StatusCode::UNAUTHORIZED, "{path}");
             let (status, _, _) = call(&accounts, method, path, Some("made up"), json!({})).await;
             assert_eq!(status, StatusCode::UNAUTHORIZED, "{path}");
         }
         let login = json!({ "name": "Zahraa", "password": PASSWORD });
-        let (status, cookie, _) = call(&accounts, "POST", "/login", None, login).await;
+        let (status, cookie, _) = call(&accounts, "POST", "/account/login", None, login).await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert!(cookie.is_none());
         std::fs::remove_dir_all(folder).expect("clean up");
@@ -362,7 +395,14 @@ mod tests {
 
         let (status, _, _) = call(&accounts, "POST", "/people/remove", Some(&owner), removal).await;
         assert_eq!(status, StatusCode::OK);
-        let (status, _, _) = call(&accounts, "GET", "/me", Some(&guest_session), json!({})).await;
+        let (status, _, _) = call(
+            &accounts,
+            "GET",
+            "/account/me",
+            Some(&guest_session),
+            json!({}),
+        )
+        .await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
         std::fs::remove_dir_all(folder).expect("clean up");
     }

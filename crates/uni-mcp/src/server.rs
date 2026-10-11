@@ -29,6 +29,7 @@ use crate::accounts::{self, Accounts};
 use crate::autostart::Launch;
 use crate::connectors::{Connectors, ServiceKind};
 use crate::hosting;
+use crate::vault::Vault;
 
 const INSTRUCTIONS: &str = "Read-only access to the student's university services: courses and \
 their files on the learning platform, the timetable, and cloud storage.\n\n\
@@ -375,7 +376,14 @@ where
     println!("Press Ctrl+C to stop.");
 
     let launch = Launch::of_this_server(address.port(), data).map_err(text)?;
-    let router = http_router(connectors, custom_instructions, Arc::new(accounts), launch);
+    let vault = Arc::new(Vault::open(data).map_err(text)?);
+    let router = http_router(
+        connectors,
+        custom_instructions,
+        Arc::new(accounts),
+        vault,
+        launch,
+    );
     tokio::select! {
         served = axum::serve(listener, router) => served.map_err(text),
         _ = tokio::signal::ctrl_c() => {
@@ -390,13 +398,18 @@ fn http_router<F>(
     connectors: Option<F>,
     custom_instructions: Option<String>,
     accounts: Arc<Accounts>,
+    vault: Arc<Vault>,
     launch: Launch,
 ) -> Router
 where
     F: Fn() -> Connectors + Send + Sync + 'static,
 {
     let router = Router::new()
-        .nest("/api", hosting::api(accounts, launch))
+        .nest(
+            "/api",
+            hosting::api(accounts.clone(), vault.clone(), launch)
+                .merge(crate::dashboard::hosted_api(accounts, vault)),
+        )
         .route("/", get(|| async { Redirect::to(SERVER_PAGE) }))
         .fallback(crate::dashboard::page);
     let Some(connectors) = connectors else {
@@ -712,20 +725,29 @@ mod tests {
         let (accounts, folder) = crate::accounts::testing::accounts("mcp-over-http");
         let accounts = Arc::new(accounts);
         let launch = crate::autostart::testing::launch;
-        let answer = http_router(Some(connectors), None, accounts.clone(), launch())
-            .oneshot(request("localhost"))
-            .await
-            .expect("response");
+        let (vault, vault_folder) = crate::vault::testing::vault("mcp-over-http");
+        let vault = Arc::new(vault);
+        let answer = http_router(
+            Some(connectors),
+            None,
+            accounts.clone(),
+            vault.clone(),
+            launch(),
+        )
+        .oneshot(request("localhost"))
+        .await
+        .expect("response");
         assert_eq!(answer.status(), StatusCode::OK);
         assert!(answer.headers().contains_key("mcp-session-id"));
 
         // A page on another site that resolves to this computer is turned away.
-        let foreign = http_router(Some(connectors), None, accounts, launch())
+        let foreign = http_router(Some(connectors), None, accounts, vault, launch())
             .oneshot(request("evil.example"))
             .await
             .expect("response");
         assert_ne!(foreign.status(), StatusCode::OK);
         std::fs::remove_dir_all(folder).expect("clean up");
+        std::fs::remove_dir_all(vault_folder).expect("clean up");
     }
 
     #[test]

@@ -18,12 +18,17 @@ const LOGIN: Record<Service["kind"], string> = {
 type Props = {
   service: Service;
   browserSignIn: boolean;
+  /// On a home server Moodle signs in on this page, not in a program.
+  hosted?: boolean;
   onChanged: () => void;
 };
 
-export function ServiceRow({ service, browserSignIn, onChanged }: Props) {
+// The kind of link a web page is allowed to receive.
+const PAGE_SCHEME = "web+unimcp";
+
+export function ServiceRow({ service, browserSignIn, hosted = false, onChanged }: Props) {
   const name = service.name;
-  const [mode, setMode] = useState<"idle" | "form" | "waiting" | "busy">("idle");
+  const [mode, setMode] = useState<"idle" | "form" | "waiting" | "paste" | "busy">("idle");
   const [error, setError] = useState<string | null>(service.error);
   const connected = service.logged_in && !service.expired && !service.checking;
 
@@ -51,7 +56,7 @@ export function ServiceRow({ service, browserSignIn, onChanged }: Props) {
     return () => clearInterval(timer);
   }, [mode, onChanged]);
 
-  async function run(action: () => Promise<unknown>, then: "idle" | "waiting" = "idle") {
+  async function run(action: () => Promise<unknown>, then: "idle" | "waiting" | "paste" = "idle") {
     setError(null);
     setMode("busy");
     try {
@@ -68,11 +73,36 @@ export function ServiceRow({ service, browserSignIn, onChanged }: Props) {
     if (service.kind !== "moodle") {
       setError(null);
       setMode("form");
+    } else if (hosted) {
+      signInOnThisPage();
     } else if (browserSignIn) {
       run(() => api("/login/moodle", {}), "waiting");
     } else {
       setError(`Run "unimcp login ${service.id}" in a terminal.`);
     }
+  }
+
+  function signInOnThisPage() {
+    // Where the browser allows it, the link comes back to this site by itself.
+    try {
+      navigator.registerProtocolHandler(PAGE_SCHEME, `${window.location.origin}/server?moodle=%s`);
+    } catch {}
+    // Opened before the request, while the click still counts as the reason.
+    const tab = window.open("", "_blank");
+    run(async () => {
+      const { url } = await api<{ url: string }>("/login/moodle", {}).catch((e) => {
+        tab?.close();
+        throw e;
+      });
+      if (tab) tab.location.href = url;
+      else window.location.href = url;
+    }, "paste");
+  }
+
+  function pasteLink(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const link = String(new FormData(event.currentTarget).get("link") ?? "");
+    run(() => api("/login/moodle/link", { link }));
   }
 
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -107,7 +137,7 @@ export function ServiceRow({ service, browserSignIn, onChanged }: Props) {
           )}
         </Cell>
         <ActionCell>
-          {mode === "waiting" || mode === "form" ? (
+          {mode === "waiting" || mode === "form" || mode === "paste" ? (
             <Button onClick={() => setMode("idle")}>Cancel</Button>
           ) : service.expired ? (
             <Button variant="primary" disabled={mode === "busy"} onClick={connect}>
@@ -133,6 +163,24 @@ export function ServiceRow({ service, browserSignIn, onChanged }: Props) {
           <p className="text-muted">
             Complete the sign-in in your browser, then allow it to open uniMCP.
           </p>
+        </DetailRow>
+      )}
+
+      {mode === "paste" && !connected && (
+        <DetailRow columns={SERVICE_COLUMNS.length}>
+          <form onSubmit={pasteLink} className="flex flex-wrap items-end gap-3">
+            <Field
+              required
+              label="Link from Moodle"
+              name="link"
+              type="password"
+              autoComplete="off"
+              title="After signing in, copy the link Moodle shows and paste it here"
+            />
+            <Button type="submit" variant="primary">
+              Connect
+            </Button>
+          </form>
         </DetailRow>
       )}
 

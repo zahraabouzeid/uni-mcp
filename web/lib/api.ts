@@ -51,6 +51,7 @@ export type DashboardState = {
   version: string;
   repository: string;
   browser_sign_in: boolean;
+  hosted: boolean;
 };
 
 export type MoodleProgress = {

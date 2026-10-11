@@ -15,6 +15,10 @@ use crate::scheme;
 const PENDING: &str = "moodle-login";
 const FAILED: &str = "failed: ";
 const SIGN_IN_TIMEOUT: Duration = Duration::from_secs(300);
+/// A web page can only receive links whose scheme starts with `web+`.
+pub const PAGE_SCHEME: &str = "web+unimcp";
+/// The same, as it has to be written inside an address.
+const PAGE_SCHEME_IN_URL: &str = "web%2Bunimcp";
 
 pub enum Progress {
     Waiting,
@@ -44,7 +48,7 @@ pub fn logout(connectors: &Connectors, service: &str) -> Result<()> {
 /// Starts a Moodle sign-in and returns the page the browser has to open. The
 /// browser then runs [`callback`]; [`moodle_progress`] tells how it went.
 pub fn begin_moodle(connectors: &Connectors) -> Result<String> {
-    let (passport, url) = new_attempt(connectors)?;
+    let (passport, url) = new_attempt(connectors, scheme::SCHEME)?;
     scheme::register(connectors.profile_id()).map_err(|e| {
         Error::Config(format!(
             "cannot register {}:// links on this system: {e}",
@@ -55,6 +59,28 @@ pub fn begin_moodle(connectors: &Connectors) -> Result<String> {
         .secrets()
         .set(&connectors.secret_key(PENDING), &passport)?;
     Ok(url)
+}
+
+/// Starts a Moodle sign-in that ends on the server's own page. Moodle is
+/// asked to show the link, so it can be copied where the page cannot take it.
+pub fn begin_moodle_on_page(connectors: &Connectors) -> Result<String> {
+    let (passport, url) = new_attempt(connectors, PAGE_SCHEME_IN_URL)?;
+    connectors
+        .secrets()
+        .set(&connectors.secret_key(PENDING), &passport)?;
+    Ok(format!("{url}&confirmed=1"))
+}
+
+pub fn finish_moodle_on_page(connectors: &Connectors, link: &str) -> Result<()> {
+    let secrets = connectors.secrets();
+    let pending = connectors.secret_key(PENDING);
+    let passport = secrets.get(&pending)?.ok_or_else(|| {
+        Error::InvalidInput("no Moodle sign-in is in progress; start it again".into())
+    })?;
+    let base_url = &connectors.moodle_profile()?.base_url;
+    let token = uni_moodle::login::parse_redirect(link, PAGE_SCHEME, base_url, &passport)?;
+    secrets.set(&connectors.secret_key(uni_moodle::SERVICE), &token)?;
+    secrets.delete(&pending)
 }
 
 pub fn moodle_progress(connectors: &Connectors) -> Result<Progress> {
@@ -180,20 +206,20 @@ fn moodle(connectors: &Connectors) -> Result<()> {
     ))
 }
 
-fn new_attempt(connectors: &Connectors) -> Result<(String, String)> {
+fn new_attempt(connectors: &Connectors, scheme: &str) -> Result<(String, String)> {
     let base_url = &connectors.moodle_profile()?.base_url;
     // The passport ties the redirect to this attempt; it is not a secret.
     let passport = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_nanos())
         .to_string();
-    let url = uni_moodle::login::launch_url(base_url, &passport, scheme::SCHEME);
+    let url = uni_moodle::login::launch_url(base_url, &passport, scheme);
     Ok((passport, url))
 }
 
 /// Where `unimcp://` links cannot be registered, the student copies the link.
 fn moodle_by_paste(connectors: &Connectors) -> Result<()> {
-    let (passport, url) = new_attempt(connectors)?;
+    let (passport, url) = new_attempt(connectors, scheme::SCHEME)?;
     println!("1. Open this page and sign in as usual:\n");
     println!("   {url}\n");
     println!(
@@ -257,6 +283,31 @@ mod tests {
             .secrets()
             .get(&connectors.secret_key(service))
             .expect("get")
+    }
+
+    #[test]
+    fn a_sign_in_on_the_server_page_ends_with_the_pasted_link() {
+        let connectors = connectors();
+        let url = begin_moodle_on_page(&connectors).expect("start");
+        assert!(url.contains("urlscheme=web%2Bunimcp") && url.ends_with("&confirmed=1"));
+        let passport = connectors
+            .secrets()
+            .get(&connectors.secret_key(PENDING))
+            .expect("get")
+            .expect("passport");
+
+        let link = redirect(&passport, "abc123").replacen(scheme::SCHEME, PAGE_SCHEME, 1);
+        let other_attempt = redirect("another", "abc123").replacen(scheme::SCHEME, PAGE_SCHEME, 1);
+        assert!(finish_moodle_on_page(&connectors, &other_attempt).is_err());
+        assert!(finish_moodle_on_page(&connectors, &redirect(&passport, "abc123")).is_err());
+
+        finish_moodle_on_page(&connectors, &link).expect("finish");
+        let token = connectors
+            .secrets()
+            .get(&connectors.secret_key(uni_moodle::SERVICE))
+            .expect("get");
+        assert_eq!(token.as_deref(), Some("abc123"));
+        assert!(finish_moodle_on_page(&connectors, &link).is_err());
     }
 
     #[test]

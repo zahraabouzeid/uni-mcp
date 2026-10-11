@@ -63,7 +63,7 @@ test("accepting an invite sends it with the chosen name and password", async () 
   await user.type(screen.getByLabelText("Password"), "correct horse battery");
   await user.click(screen.getByRole("button", { name: "Create account" }));
 
-  expect(serverApi).toHaveBeenCalledWith("/accept", {
+  expect(serverApi).toHaveBeenCalledWith("/account/accept", {
     invite: "c0de",
     name: "Bestie",
     password: "correct horse battery",

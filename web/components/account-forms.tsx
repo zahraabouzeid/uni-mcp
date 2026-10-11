@@ -9,7 +9,7 @@ type Props = { onDone: (person: Person) => void };
 
 export function LogIn({ onDone }: Props) {
   return (
-    <AccountForm title="Log in" action="Log in" path="/login" onDone={onDone}>
+    <AccountForm title="Log in" action="Log in" path="/account/login" onDone={onDone}>
       <Field required label="Username" name="name" autoComplete="username" />
       <Field
         required
@@ -27,7 +27,7 @@ export function Join({ invite, onDone }: Props & { invite: string }) {
     <AccountForm
       title="Create your account"
       action="Create account"
-      path="/accept"
+      path="/account/accept"
       extra={{ invite }}
       onDone={onDone}
     >
