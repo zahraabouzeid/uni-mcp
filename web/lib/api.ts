@@ -33,7 +33,7 @@ export type ToolRun = {
 };
 
 export type AppTarget = {
-  id: "claude-desktop" | "claude-code" | "codex";
+  id: "claude-desktop" | "claude-code" | "codex" | "gemini-cli";
   installed: boolean;
   added: boolean;
   running: boolean;

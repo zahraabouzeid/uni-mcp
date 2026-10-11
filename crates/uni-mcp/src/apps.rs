@@ -24,6 +24,7 @@ pub enum App {
     ClaudeDesktop,
     ClaudeCode,
     Codex,
+    GeminiCli,
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize)]
@@ -41,6 +42,7 @@ struct Places {
     claude_desktop: PathBuf,
     claude_code: PathBuf,
     codex: PathBuf,
+    gemini_cli: PathBuf,
 }
 
 impl Places {
@@ -52,6 +54,7 @@ impl Places {
                 .join("claude_desktop_config.json"),
             claude_code: home.join(".claude.json"),
             codex: home.join(".codex").join("config.toml"),
+            gemini_cli: home.join(".gemini").join("settings.json"),
         })
     }
 
@@ -71,6 +74,10 @@ impl Places {
                 folder_exists(&self.codex),
                 toml_has(&read(&self.codex), command),
             ),
+            App::GeminiCli => (
+                folder_exists(&self.gemini_cli),
+                json_has(&read(&self.gemini_cli), command),
+            ),
         };
         AppState {
             id,
@@ -85,10 +92,15 @@ pub fn states(command: &str) -> Vec<AppState> {
     let Some(places) = Places::of_this_user() else {
         return Vec::new();
     };
-    [App::ClaudeDesktop, App::ClaudeCode, App::Codex]
-        .into_iter()
-        .map(|id| places.state(id, command))
-        .collect()
+    [
+        App::ClaudeDesktop,
+        App::ClaudeCode,
+        App::Codex,
+        App::GeminiCli,
+    ]
+    .into_iter()
+    .map(|id| places.state(id, command))
+    .collect()
 }
 
 pub fn add(app: App, command: &str) -> Result<()> {
@@ -106,6 +118,7 @@ pub fn add(app: App, command: &str) -> Result<()> {
             })
         }
         App::Codex => rewrite(&places.codex, |settings| toml_with(settings, command)),
+        App::GeminiCli => rewrite(&places.gemini_cli, |settings| json_with(settings, command)),
         App::ClaudeCode => {
             let program = launch::find(CLAUDE_CODE)
                 .ok_or_else(|| Error::Config("the `claude` command was not found".into()))?;
@@ -319,6 +332,7 @@ mod tests {
             claude_desktop: home.join("Claude").join("claude_desktop_config.json"),
             claude_code: home.join(".claude.json"),
             codex: home.join(".codex").join("config.toml"),
+            gemini_cli: home.join(".gemini").join("settings.json"),
         };
         let codex = places.state(App::Codex, "unimcp");
         assert!(!codex.installed && !codex.added && !codex.running);
@@ -327,6 +341,16 @@ mod tests {
         fs::write(&places.codex, toml_with("", "unimcp").expect("settings")).expect("settings");
         let codex = places.state(App::Codex, "unimcp");
         assert!(codex.installed && codex.added);
+
+        fs::create_dir_all(home.join(".gemini")).expect("folder");
+        let gemini = places.state(App::GeminiCli, "unimcp");
+        assert!(gemini.installed && !gemini.added);
+        fs::write(
+            &places.gemini_cli,
+            json_with("", "unimcp").expect("settings"),
+        )
+        .expect("settings");
+        assert!(places.state(App::GeminiCli, "unimcp").added);
 
         fs::remove_dir_all(home).expect("clean up");
     }
