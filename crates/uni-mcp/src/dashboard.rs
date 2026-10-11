@@ -284,7 +284,6 @@ fn api() -> Router {
         .route("/apps/add", post(add_to_app))
 }
 
-/// The dashboards of the accounts on a home server.
 #[derive(Clone)]
 struct Hosted {
     accounts: Arc<Accounts>,
@@ -319,7 +318,6 @@ impl Hosted {
     }
 }
 
-/// The dashboard API for whoever is logged in to the server.
 pub fn hosted_api(accounts: Arc<Accounts>, vault: Arc<Vault>, database: Arc<Database>) -> Router {
     let hosted = Hosted {
         accounts,
@@ -340,7 +338,7 @@ async fn require_account(
         return (StatusCode::UNAUTHORIZED, refusal).into_response();
     };
     // The admin looks after the server and keeps no university logins on it.
-    if person.owner {
+    if person.admin {
         let refusal = Json(json!({ "error": "the admin account has no university dashboard" }));
         return (StatusCode::FORBIDDEN, refusal).into_response();
     }

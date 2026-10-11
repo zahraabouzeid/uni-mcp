@@ -44,7 +44,6 @@ pub enum Settings {
 impl Settings {
     const FILE: &'static str = "config.toml";
 
-    /// The settings of whoever runs the program on this computer.
     pub fn of_this_user() -> Result<Self> {
         dirs::config_dir()
             .map(|dir| Self::File(dir.join(env!("CARGO_PKG_NAME")).join(Self::FILE)))

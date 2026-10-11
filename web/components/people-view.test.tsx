@@ -10,16 +10,16 @@ vi.mock("@/lib/server-api", async (original) => ({
   serverApi: vi.fn(),
 }));
 
-const owner = { id: "a", name: "Zahraa", owner: true };
-const member = { id: "b", name: "Bestie", owner: false };
+const admin = { id: "a", name: "Zahraa", admin: true };
+const member = { id: "b", name: "Bestie", admin: false };
 
 afterEach(() => {
   cleanup();
   vi.mocked(serverApi).mockReset();
 });
 
-test("the owner sees everyone, and only members can be removed", async () => {
-  vi.mocked(serverApi).mockResolvedValue({ people: [owner, member] });
+test("the admin sees everyone, and only members can be removed", async () => {
+  vi.mocked(serverApi).mockResolvedValue({ people: [admin, member] });
   render(<PeopleView />);
 
   expect(await screen.findByText("Zahraa")).toBeTruthy();
@@ -29,7 +29,7 @@ test("the owner sees everyone, and only members can be removed", async () => {
 });
 
 test("removing someone asks once more before it happens", async () => {
-  vi.mocked(serverApi).mockResolvedValue({ people: [owner, member] });
+  vi.mocked(serverApi).mockResolvedValue({ people: [admin, member] });
   const user = userEvent.setup();
   render(<PeopleView />);
 
@@ -42,7 +42,7 @@ test("removing someone asks once more before it happens", async () => {
 
 test("an invite is shown as a link to this server", async () => {
   vi.mocked(serverApi).mockImplementation(async (path) =>
-    path === "/invites" ? { invite: "c0de" } : { people: [owner] },
+    path === "/invites" ? { invite: "c0de" } : { people: [admin] },
   );
   const user = userEvent.setup();
   render(<PeopleView />);

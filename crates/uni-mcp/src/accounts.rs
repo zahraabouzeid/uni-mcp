@@ -28,8 +28,8 @@ const WRONG_LOGIN: &str = "wrong name or password";
 pub struct Person {
     pub id: String,
     pub name: String,
-    /// The owner invites and removes the others.
-    pub owner: bool,
+    /// The admin invites and removes the others.
+    pub admin: bool,
 }
 
 /// Invites and sessions are stored as fingerprints, so the database alone
@@ -50,7 +50,7 @@ fn person(row: &rusqlite::Row) -> rusqlite::Result<Person> {
     Ok(Person {
         id: row.get("id")?,
         name: row.get("name")?,
-        owner: row.get("owner")?,
+        admin: row.get("admin")?,
     })
 }
 
@@ -84,7 +84,7 @@ impl Accounts {
     }
 
     /// A new server with nobody on it and no invite on its way.
-    pub fn waits_for_its_owner(&self, now: u64) -> Result<bool> {
+    pub fn waits_for_its_admin(&self, now: u64) -> Result<bool> {
         self.database.with(|connection| {
             connection
                 .query_row(
@@ -114,7 +114,7 @@ impl Accounts {
     }
 
     /// Creates the account an invite was made for and logs its browser in.
-    /// The first account on a server is its owner.
+    /// The first account on a server is its admin.
     pub fn accept(
         &self,
         invite: &str,
@@ -165,9 +165,9 @@ impl Accounts {
             }
             let person = transaction
                 .query_row(
-                    "INSERT INTO accounts (id, name, name_key, password, owner, created)
+                    "INSERT INTO accounts (id, name, name_key, password, admin, created)
                      VALUES (?1, ?2, ?3, ?4, NOT EXISTS (SELECT 1 FROM accounts), ?5)
-                     RETURNING id, name, owner",
+                     RETURNING id, name, admin",
                     params![id, name, name.to_lowercase(), password, now],
                     person,
                 )
@@ -188,7 +188,7 @@ impl Accounts {
         let found = self.database.with(|connection| {
             connection
                 .query_row(
-                    "SELECT id, name, owner, password FROM accounts WHERE name_key = ?1",
+                    "SELECT id, name, admin, password FROM accounts WHERE name_key = ?1",
                     [&key],
                     |row| Ok((person(row)?, row.get::<_, String>("password")?)),
                 )
@@ -235,7 +235,7 @@ impl Accounts {
         let found = self.database.with(|connection| {
             connection
                 .query_row(
-                    "SELECT accounts.id, accounts.name, accounts.owner
+                    "SELECT accounts.id, accounts.name, accounts.admin
                      FROM sessions JOIN accounts ON accounts.id = sessions.account
                      WHERE sessions.fingerprint = ?1 AND sessions.expires > ?2",
                     params![fingerprint(session), now],
@@ -262,7 +262,7 @@ impl Accounts {
     pub fn people(&self) -> Result<Vec<Person>> {
         self.database.with(|connection| {
             let mut statement = connection
-                .prepare("SELECT id, name, owner FROM accounts ORDER BY created, rowid")
+                .prepare("SELECT id, name, admin FROM accounts ORDER BY created, rowid")
                 .map_err(sql)?;
             let people = statement
                 .query_map([], person)
@@ -273,16 +273,16 @@ impl Accounts {
     }
 
     /// Removes an account with everything it has on the server: its sessions,
-    /// its settings and its logins. The owner stays.
+    /// its settings and its logins. The admin stays.
     pub fn remove(&self, id: &str) -> Result<()> {
         self.database.with(|connection| {
-            let owner: Option<bool> = connection
-                .query_row("SELECT owner FROM accounts WHERE id = ?1", [id], |row| {
+            let admin: Option<bool> = connection
+                .query_row("SELECT admin FROM accounts WHERE id = ?1", [id], |row| {
                     row.get(0)
                 })
                 .optional()
                 .map_err(sql)?;
-            match owner {
+            match admin {
                 None => Err(Error::InvalidInput("no such account".into())),
                 Some(true) => Err(Error::InvalidInput("the admin cannot be removed".into())),
                 Some(false) => {
@@ -373,20 +373,20 @@ mod tests {
 
     #[test]
     fn the_first_account_owns_the_server_and_later_ones_do_not() {
-        let (accounts, folder) = accounts("owner");
-        assert!(accounts.waits_for_its_owner(0).expect("waits"));
+        let (accounts, folder) = accounts("admin");
+        assert!(accounts.waits_for_its_admin(0).expect("waits"));
         let (first, _) = join(&accounts, "Zahraa");
         let (second, _) = join(&accounts, "Bestie");
-        assert!(first.owner && !second.owner);
+        assert!(first.admin && !second.admin);
         assert_eq!(accounts.people().expect("people"), [first, second]);
         drop(accounts);
         fs::remove_dir_all(folder).expect("clean up");
     }
 
     #[test]
-    fn a_new_server_waits_for_its_owner_until_an_invite_is_out() {
+    fn a_new_server_waits_for_its_admin_until_an_invite_is_out() {
         let (accounts, folder) = accounts("waits");
-        let waits = |now| accounts.waits_for_its_owner(now).expect("waits");
+        let waits = |now| accounts.waits_for_its_admin(now).expect("waits");
         assert!(waits(0));
         let invite = accounts.invite(0).expect("invite");
         assert!(!waits(0));
@@ -394,7 +394,7 @@ mod tests {
 
         accounts
             .accept(&invite, "Zahraa", PASSWORD, 0)
-            .expect("owner");
+            .expect("admin");
         assert!(!waits(INVITE_VALID_SECONDS));
         drop(accounts);
         fs::remove_dir_all(folder).expect("clean up");
@@ -493,17 +493,17 @@ mod tests {
     }
 
     #[test]
-    fn removing_someone_logs_them_out_but_the_owner_stays() {
+    fn removing_someone_logs_them_out_but_the_admin_stays() {
         let (accounts, folder) = accounts("remove");
-        let (owner, _) = join(&accounts, "Zahraa");
+        let (admin, _) = join(&accounts, "Zahraa");
         let (other, session) = join(&accounts, "Bestie");
-        assert!(accounts.remove(&owner.id).is_err());
+        assert!(accounts.remove(&admin.id).is_err());
         assert!(accounts.remove("nobody").is_err());
 
         accounts.remove(&other.id).expect("remove");
         assert!(accounts.person_of(&session, 0).is_none());
         assert!(accounts.log_in("Bestie", PASSWORD, 0).is_err());
-        assert_eq!(accounts.people().expect("people"), [owner]);
+        assert_eq!(accounts.people().expect("people"), [admin]);
         drop(accounts);
         fs::remove_dir_all(folder).expect("clean up");
     }

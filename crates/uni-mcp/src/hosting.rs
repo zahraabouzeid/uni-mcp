@@ -1,5 +1,5 @@
 //! The account API of a home server: accepting an invite, logging in and out,
-//! and, for the owner, inviting and removing people.
+//! and, for the admin, inviting and removing people.
 
 use std::sync::Arc;
 
@@ -61,7 +61,7 @@ fn autostart_state(note: Option<String>) -> Response {
 }
 
 async fn server_settings(State((accounts, _)): Settings, headers: HeaderMap) -> Answer {
-    owner(&accounts, &headers)?;
+    admin(&accounts, &headers)?;
     Ok(autostart_state(None))
 }
 
@@ -75,7 +75,7 @@ async fn set_autostart(
     headers: HeaderMap,
     Json(switch): Json<Switch>,
 ) -> Answer {
-    owner(&accounts, &headers)?;
+    admin(&accounts, &headers)?;
     let note = match switch.on {
         true => autostart::turn_on(&launch, false)?,
         false => autostart::turn_off().map(|()| None)?,
@@ -92,7 +92,6 @@ fn session_of(headers: &HeaderMap) -> Option<&str> {
         .find_map(|cookie| cookie.trim().strip_prefix(COOKIE_NAME)?.strip_prefix('='))
 }
 
-/// Whose browser a request comes from, if it is logged in.
 pub(crate) fn person_in(accounts: &Accounts, headers: &HeaderMap) -> Option<Person> {
     session_of(headers).and_then(|session| accounts.person_of(session, accounts::now()))
 }
@@ -102,9 +101,9 @@ fn logged_in(accounts: &Accounts, headers: &HeaderMap) -> Result<Person, Refusal
         .ok_or_else(|| Refusal(StatusCode::UNAUTHORIZED, "log in first".into()))
 }
 
-fn owner(accounts: &Accounts, headers: &HeaderMap) -> Result<Person, Refusal> {
+fn admin(accounts: &Accounts, headers: &HeaderMap) -> Result<Person, Refusal> {
     let person = logged_in(accounts, headers)?;
-    if !person.owner {
+    if !person.admin {
         return Err(Refusal(
             StatusCode::FORBIDDEN,
             "only the admin can do this".into(),
@@ -185,7 +184,7 @@ async fn me(State(accounts): State<Arc<Accounts>>, headers: HeaderMap) -> Answer
 }
 
 async fn people(State(accounts): State<Arc<Accounts>>, headers: HeaderMap) -> Answer {
-    owner(&accounts, &headers)?;
+    admin(&accounts, &headers)?;
     Ok(Json(json!({ "people": accounts.people()? })).into_response())
 }
 
@@ -199,13 +198,13 @@ async fn remove(
     headers: HeaderMap,
     Json(body): Json<Removal>,
 ) -> Answer {
-    owner(&accounts, &headers)?;
+    admin(&accounts, &headers)?;
     accounts.remove(&body.id)?;
     Ok(Json(json!({ "ok": true })).into_response())
 }
 
 async fn invite(State(accounts): State<Arc<Accounts>>, headers: HeaderMap) -> Answer {
-    owner(&accounts, &headers)?;
+    admin(&accounts, &headers)?;
     let invite: Value = accounts.invite(accounts::now())?.into();
     Ok(Json(json!({ "invite": invite })).into_response())
 }
@@ -270,7 +269,7 @@ mod tests {
         let join = json!({ "invite": invite, "name": "Zahraa", "password": PASSWORD });
         let (status, cookie, body) = call(&accounts, "POST", "/account/accept", None, join).await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(body["person"]["owner"], true);
+        assert_eq!(body["person"]["admin"], true);
         let session = session_in(cookie);
 
         let (status, _, body) =
@@ -317,20 +316,20 @@ mod tests {
 
     // Only reads the setting: switching it would change this computer.
     #[tokio::test]
-    async fn only_the_owner_sees_the_server_settings() {
+    async fn only_the_admin_sees_the_server_settings() {
         let (accounts, folder) = accounts("api-settings");
         let accounts = Arc::new(accounts);
         let now = accounts::now();
         let first = accounts.invite(now).expect("invite");
-        let (_, owner) = accounts
+        let (_, admin) = accounts
             .accept(&first, "Zahraa", PASSWORD, now)
-            .expect("owner");
+            .expect("admin");
         let second = accounts.invite(now).expect("invite");
         let (_, guest) = accounts
             .accept(&second, "Bestie", PASSWORD, now)
             .expect("guest");
 
-        let (status, _, body) = call(&accounts, "GET", "/server", Some(&owner), json!({})).await;
+        let (status, _, body) = call(&accounts, "GET", "/server", Some(&admin), json!({})).await;
         assert_eq!(status, StatusCode::OK);
         assert!(body["autostart"]["on"].is_boolean());
 
@@ -353,16 +352,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn only_the_owner_invites_lists_and_removes_people() {
-        let (accounts, folder) = accounts("api-owner");
+    async fn only_the_admin_invites_lists_and_removes_people() {
+        let (accounts, folder) = accounts("api-admin");
         let accounts = Arc::new(accounts);
         let now = accounts::now();
         let first = accounts.invite(now).expect("invite");
-        let (_, owner) = accounts
+        let (_, admin) = accounts
             .accept(&first, "Zahraa", PASSWORD, now)
-            .expect("owner");
+            .expect("admin");
 
-        let (status, _, body) = call(&accounts, "POST", "/invites", Some(&owner), json!({})).await;
+        let (status, _, body) = call(&accounts, "POST", "/invites", Some(&admin), json!({})).await;
         assert_eq!(status, StatusCode::OK);
         let invite = body["invite"].as_str().expect("invite").to_owned();
         let (guest, guest_session) = accounts
@@ -385,11 +384,11 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::FORBIDDEN);
 
-        let (status, _, body) = call(&accounts, "GET", "/people", Some(&owner), json!({})).await;
+        let (status, _, body) = call(&accounts, "GET", "/people", Some(&admin), json!({})).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["people"].as_array().map(Vec::len), Some(2));
 
-        let (status, _, _) = call(&accounts, "POST", "/people/remove", Some(&owner), removal).await;
+        let (status, _, _) = call(&accounts, "POST", "/people/remove", Some(&admin), removal).await;
         assert_eq!(status, StatusCode::OK);
         let (status, _, _) = call(
             &accounts,

@@ -18,7 +18,7 @@ const LOGIN: Record<Service["kind"], string> = {
 type Props = {
   service: Service;
   browserSignIn: boolean;
-  /// On a home server Moodle signs in on this page, not in a program.
+  // On a home server Moodle signs in on this page, not in a program.
   hosted?: boolean;
   onChanged: () => void;
 };

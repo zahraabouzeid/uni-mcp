@@ -344,8 +344,7 @@ pub async fn serve(
     Ok(())
 }
 
-/// Where the owner of a new server creates their account.
-pub fn owner_link(port: u16, invite: &str) -> String {
+pub fn admin_link(port: u16, invite: &str) -> String {
     format!("http://127.0.0.1:{port}{SERVER_PAGE}?invite={invite}")
 }
 
@@ -371,12 +370,12 @@ where
     }
     let accounts = Accounts::new(database.clone());
     if accounts
-        .waits_for_its_owner(accounts::now())
+        .waits_for_its_admin(accounts::now())
         .map_err(text)?
     {
         let invite = accounts.invite(accounts::now()).map_err(text)?;
         println!("Create an admin account:");
-        println!("{}", owner_link(address.port(), &invite));
+        println!("{}", admin_link(address.port(), &invite));
     }
     println!("Press Ctrl+C to stop.");
 
@@ -396,7 +395,6 @@ where
     }
 }
 
-/// What a home server keeps: who is on it, and what belongs to them.
 struct Home {
     database: Arc<Database>,
     accounts: Arc<Accounts>,

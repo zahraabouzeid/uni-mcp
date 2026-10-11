@@ -76,7 +76,6 @@ impl Vault {
     }
 }
 
-/// The logins of one account.
 pub struct VaultStore {
     key: [u8; KEY_BYTES],
     database: Arc<Database>,

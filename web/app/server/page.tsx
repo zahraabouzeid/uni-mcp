@@ -32,7 +32,7 @@ export default function Server() {
   }, []);
 
   useEffect(() => {
-    if (!person || person.owner || !moodleLink) return;
+    if (!person || person.admin || !moodleLink) return;
     api("/login/moodle/link", { link: moodleLink }).then(
       () => {
         clearAddress();
@@ -58,7 +58,7 @@ export default function Server() {
   if (!session || !person) {
     return invite ? <Join invite={invite} onDone={joined} /> : <LogIn onDone={setSession} />;
   }
-  if (person.owner) {
+  if (person.admin) {
     return <AdminConsole person={person} about={session.about} onLogOut={logOut} />;
   }
   if (moodleError) {

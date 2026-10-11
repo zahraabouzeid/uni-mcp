@@ -4,16 +4,11 @@
 
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
 use uni_core::{Error, Result};
 
-#[cfg_attr(
-    not(any(windows, target_os = "linux", target_os = "macos")),
-    allow(dead_code)
-)]
+#[cfg(any(test, windows, target_os = "linux", target_os = "macos"))]
 const NAME: &str = "unimcp-server";
 
-/// The command that starts this server again.
 #[derive(Debug, Clone)]
 pub struct Launch {
     program: PathBuf,
@@ -45,18 +40,10 @@ impl Launch {
     }
 }
 
-/// When the system starts the server. Each system has one of the two.
-#[allow(dead_code)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Moment {
-    Boot,
-    Login,
-}
-
+/// `MOMENT` is when the system starts the server: at `boot` or at `login`.
 pub use system::{MOMENT, is_on, turn_off, turn_on};
 
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg(any(test, windows))]
 fn windows_command(launch: &Launch, headless_host: Option<&Path>) -> String {
     let quoted = |part: String| match part.contains(' ') {
         true => format!("\"{part}\""),
@@ -70,7 +57,7 @@ fn windows_command(launch: &Launch, headless_host: Option<&Path>) -> String {
         .join(" ")
 }
 
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+#[cfg(any(test, target_os = "linux"))]
 fn systemd_unit(launch: &Launch) -> String {
     let quoted = |part: String| {
         let escaped = part
@@ -87,7 +74,7 @@ fn systemd_unit(launch: &Launch) -> String {
     )
 }
 
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[cfg(any(test, target_os = "macos"))]
 fn launchd_plist(launch: &Launch) -> String {
     let escaped = |part: String| {
         part.replace('&', "&amp;")
@@ -118,7 +105,7 @@ mod system {
 
     use super::*;
 
-    pub const MOMENT: Option<Moment> = Some(Moment::Login);
+    pub const MOMENT: Option<&str> = Some("login");
     const RUN: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 
     fn failed(e: std::io::Error) -> Error {
@@ -174,7 +161,7 @@ mod system {
 
     use super::*;
 
-    pub const MOMENT: Option<Moment> = Some(Moment::Boot);
+    pub const MOMENT: Option<&str> = Some("boot");
 
     fn unit_name() -> String {
         format!("{NAME}.service")
@@ -255,7 +242,7 @@ mod system {
 
     use super::*;
 
-    pub const MOMENT: Option<Moment> = Some(Moment::Login);
+    pub const MOMENT: Option<&str> = Some("login");
 
     fn agent_file() -> Option<PathBuf> {
         Some(
@@ -306,7 +293,7 @@ mod system {
 mod system {
     use super::*;
 
-    pub const MOMENT: Option<Moment> = None;
+    pub const MOMENT: Option<&str> = None;
 
     pub fn is_on() -> bool {
         false

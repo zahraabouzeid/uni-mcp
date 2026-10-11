@@ -189,15 +189,15 @@ async fn run_server(
         Some(Switch::On) => {
             // The background server has no terminal to show the link in.
             let now = accounts::now();
-            if accounts.waits_for_its_owner(now).map_err(text)? {
+            if accounts.waits_for_its_admin(now).map_err(text)? {
                 let invite = accounts.invite(now).map_err(text)?;
                 println!("Create an admin account:");
-                println!("{}", server::owner_link(port, &invite));
+                println!("{}", server::admin_link(port, &invite));
             }
             let launch = autostart::Launch::of_this_server(port, &folder).map_err(text)?;
             let note = autostart::turn_on(&launch, true).map_err(text)?;
             let when = match autostart::MOMENT {
-                Some(autostart::Moment::Boot) => "whenever this computer starts",
+                Some("boot") => "whenever this computer starts",
                 _ => "whenever you log in to this computer",
             };
             println!("The server is running in the background and starts {when}.");

@@ -13,7 +13,10 @@ const FILE: &str = "unimcp.db";
 
 /// In the order they are applied. A released script is never changed again;
 /// a change to the tables is a new script at the end.
-const MIGRATIONS: &[&str] = &[include_str!("../migrations/0001_accounts.sql")];
+const MIGRATIONS: &[&str] = &[
+    include_str!("../migrations/0001_accounts.sql"),
+    include_str!("../migrations/0002_admin.sql"),
+];
 
 pub struct Database {
     connection: Mutex<Connection>,
