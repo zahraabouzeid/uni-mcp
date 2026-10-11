@@ -1,14 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { CustomPromptView } from "@/components/custom-prompt-view";
+import { SettingsView } from "@/components/settings-view";
 import { SERVICE_COLUMNS, ServiceRow } from "@/components/service-row";
 import { SetupView } from "@/components/setup-view";
 import { TOOL_COLUMNS, ToolRow } from "@/components/tool-row";
 import { ActionCell, Button, Cell, ErrorText, Table } from "@/components/ui";
 import { announceClosing, api, errorMessage, type DashboardState } from "@/lib/api";
 
-const VIEWS = ["services", "tools", "prompt", "setup"] as const;
+const VIEWS = ["services", "tools", "setup", "settings"] as const;
 type View = (typeof VIEWS)[number];
 
 const NEUTRAL = "#1f1f23";
@@ -63,8 +63,8 @@ export default function Console() {
   const nav: { view: View; label: string; count?: string }[] = [
     { view: "services", label: "Services", count: `${connected}/${state.services.length}` },
     { view: "tools", label: "Tools", count: String(state.tools.length) },
-    { view: "prompt", label: "Custom prompt" },
     { view: "setup", label: "Setup" },
+    { view: "settings", label: "Settings" },
   ];
 
   return (
@@ -203,11 +203,11 @@ export default function Console() {
                   ))}
                 </Table>
               </>
-            ) : view === "prompt" ? (
-              <CustomPromptView
+            ) : view === "settings" ? (
+              <SettingsView
                 key={university.id}
-                saved={state.custom_prompt}
-                limit={state.custom_prompt_limit}
+                saved={state.custom_instructions}
+                limit={state.custom_instructions_limit}
                 onSaved={load}
               />
             ) : (

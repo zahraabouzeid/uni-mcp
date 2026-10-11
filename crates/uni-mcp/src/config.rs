@@ -12,18 +12,18 @@ pub struct Config {
     pub profile: Option<String>,
     /// What the student wants every AI app to know, in their own words.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub custom_prompt: Option<String>,
+    pub custom_instructions: Option<String>,
 }
 
-/// It travels with every conversation, so it has to stay short.
-pub const MAX_CUSTOM_PROMPT_CHARS: usize = 2000;
+/// They travel with every conversation, so they have to stay short.
+pub const MAX_CUSTOM_INSTRUCTIONS_CHARS: usize = 2000;
 
-/// The custom prompt as it is stored: trimmed, and `None` when nothing is left.
-pub fn custom_prompt(text: &str) -> Result<Option<String>> {
+/// Custom instructions as they are stored: trimmed, and `None` when nothing is left.
+pub fn custom_instructions(text: &str) -> Result<Option<String>> {
     let text = text.trim();
-    if text.chars().count() > MAX_CUSTOM_PROMPT_CHARS {
+    if text.chars().count() > MAX_CUSTOM_INSTRUCTIONS_CHARS {
         return Err(Error::InvalidInput(format!(
-            "the custom prompt can be at most {MAX_CUSTOM_PROMPT_CHARS} characters long"
+            "custom instructions can be at most {MAX_CUSTOM_INSTRUCTIONS_CHARS} characters long"
         )));
     }
     Ok((!text.is_empty()).then(|| text.to_owned()))
@@ -64,26 +64,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_custom_prompt_is_trimmed_and_an_empty_one_dropped() {
+    fn custom_instructions_are_trimmed_and_empty_ones_dropped() {
         assert_eq!(
-            custom_prompt("  Answer in German.\n")
-                .expect("prompt")
+            custom_instructions("  Answer in German.\n")
+                .expect("instructions")
                 .as_deref(),
             Some("Answer in German.")
         );
-        assert_eq!(custom_prompt(" \n ").expect("empty"), None);
+        assert_eq!(custom_instructions(" \n ").expect("empty"), None);
     }
 
     #[test]
-    fn a_custom_prompt_has_a_length_limit_counted_in_characters() {
-        assert!(custom_prompt(&"ä".repeat(MAX_CUSTOM_PROMPT_CHARS)).is_ok());
-        assert!(custom_prompt(&"ä".repeat(MAX_CUSTOM_PROMPT_CHARS + 1)).is_err());
+    fn custom_instructions_have_a_length_limit_counted_in_characters() {
+        assert!(custom_instructions(&"ä".repeat(MAX_CUSTOM_INSTRUCTIONS_CHARS)).is_ok());
+        assert!(custom_instructions(&"ä".repeat(MAX_CUSTOM_INSTRUCTIONS_CHARS + 1)).is_err());
     }
 
     #[test]
-    fn a_config_without_a_custom_prompt_still_loads_and_stays_small() {
+    fn a_config_without_custom_instructions_still_loads_and_stays_small() {
         let config: Config = toml::from_str("profile = \"x\"\n").expect("config");
-        assert_eq!(config.custom_prompt, None);
+        assert_eq!(config.custom_instructions, None);
         assert_eq!(toml::to_string(&config).expect("toml"), "profile = \"x\"\n");
     }
 }

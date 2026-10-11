@@ -105,10 +105,10 @@ async fn run(cli: Cli) -> Result<(), String> {
         Command::Dashboard { .. } => Ok(()),
         Command::Serve => {
             // A broken config must not keep the AI app from its tools.
-            let custom_prompt = config::load()
-                .map(|config| config.custom_prompt)
+            let custom_instructions = config::load()
+                .map(|config| config.custom_instructions)
                 .unwrap_or_default();
-            server::serve(connectors, custom_prompt).await
+            server::serve(connectors, custom_instructions).await
         }
         Command::Login { service } => login::login(&connectors, &service)
             .await
