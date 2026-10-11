@@ -201,7 +201,7 @@ async fn run_server(
                 _ => "whenever you log in to this computer",
             };
             println!("The server is running in the background and starts {when}.");
-            println!("Admin dashboard: http://127.0.0.1:{port}/server");
+            println!("Dashboard: http://127.0.0.1:{port}/server");
             if let Some(note) = note {
                 println!("{note}");
             }

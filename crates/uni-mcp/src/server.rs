@@ -365,7 +365,7 @@ where
         .await
         .map_err(|e| format!("cannot listen on port {port}: {e}"))?;
     let address = listener.local_addr().map_err(text)?;
-    println!("Admin dashboard: http://{address}{SERVER_PAGE}");
+    println!("Dashboard: http://{address}{SERVER_PAGE}");
     if connectors.is_some() {
         println!("MCP server: http://{address}{HTTP_PATH}");
     }
