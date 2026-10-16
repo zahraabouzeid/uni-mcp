@@ -1,6 +1,6 @@
 export type Person = { id: string; name: string; admin: boolean };
 
-export type About = { version: string; repository: string };
+export type About = { version: string; repository: string; public_url: string | null };
 
 export type Session = { person: Person; about: About };
 

@@ -53,10 +53,22 @@ test("an invite is shown as a link to this server", async () => {
   expect(screen.getByText("This link works once and for one week.")).toBeTruthy();
 });
 
+test("an invite points to the address members use, not to the admin port", async () => {
+  vi.mocked(serverApi).mockImplementation(async (path) =>
+    path === "/invites" ? { invite: "c0de" } : { people: [admin] },
+  );
+  const user = userEvent.setup();
+  render(<PeopleView publicUrl="https://uni.example" />);
+
+  await user.click(await screen.findByRole("button", { name: "Invite someone" }));
+
+  expect(await screen.findByText("https://uni.example/server?invite=c0de")).toBeTruthy();
+});
+
 test("accepting an invite sends it with the chosen name and password", async () => {
   const session = {
     person: member,
-    about: { version: "1.0.0", repository: "https://example.org" },
+    about: { version: "1.0.0", repository: "https://example.org", public_url: null },
   };
   vi.mocked(serverApi).mockResolvedValue(session);
   const onDone = vi.fn();

@@ -16,19 +16,21 @@ pub struct Launch {
 }
 
 impl Launch {
-    pub fn of_this_server(port: u16, data: &Path) -> Result<Self> {
+    pub fn of_this_server(port: u16, admin_port: u16, data: &Path) -> Result<Self> {
         let program = std::env::current_exe()
             .map_err(|e| Error::Config(format!("cannot tell where uniMCP is installed: {e}")))?;
-        Ok(Self::new(program, port, data))
+        Ok(Self::new(program, port, admin_port, data))
     }
 
-    fn new(program: PathBuf, port: u16, data: &Path) -> Self {
+    fn new(program: PathBuf, port: u16, admin_port: u16, data: &Path) -> Self {
         Self {
             program,
             arguments: vec![
                 "server".into(),
                 "--port".into(),
                 port.to_string(),
+                "--admin-port".into(),
+                admin_port.to_string(),
                 "--data".into(),
                 data.display().to_string(),
             ],
@@ -318,6 +320,7 @@ pub mod testing {
         Launch::new(
             PathBuf::from("/opt/uni mcp/unimcp"),
             8787,
+            8788,
             Path::new("/srv/data"),
         )
     }
@@ -333,7 +336,7 @@ mod tests {
         let host = Path::new(r"C:\Windows\System32\conhost.exe");
         assert_eq!(
             windows_command(&launch(), Some(host)),
-            "\"C:\\Windows\\System32\\conhost.exe\" --headless \"/opt/uni mcp/unimcp\" server --port 8787 --data /srv/data"
+            "\"C:\\Windows\\System32\\conhost.exe\" --headless \"/opt/uni mcp/unimcp\" server --port 8787 --admin-port 8788 --data /srv/data"
         );
         assert!(windows_command(&launch(), None).starts_with("\"/opt/uni mcp/unimcp\" server"));
     }
@@ -342,7 +345,7 @@ mod tests {
     fn the_systemd_unit_restarts_after_a_crash_and_starts_with_the_user_session() {
         let unit = systemd_unit(&launch());
         assert!(unit.contains(
-            "ExecStart=\"/opt/uni mcp/unimcp\" \"server\" \"--port\" \"8787\" \"--data\" \"/srv/data\"\n"
+            "ExecStart=\"/opt/uni mcp/unimcp\" \"server\" \"--port\" \"8787\" \"--admin-port\" \"8788\" \"--data\" \"/srv/data\"\n"
         ));
         assert!(unit.contains("Restart=on-failure\n"));
         assert!(unit.ends_with("[Install]\nWantedBy=default.target\n"));
@@ -350,13 +353,18 @@ mod tests {
 
     #[test]
     fn a_percent_sign_in_a_path_is_not_read_as_a_systemd_placeholder() {
-        let odd = Launch::new(PathBuf::from("/opt/100%/unimcp"), 1, Path::new("/d"));
+        let odd = Launch::new(PathBuf::from("/opt/100%/unimcp"), 1, 2, Path::new("/d"));
         assert!(systemd_unit(&odd).contains("\"/opt/100%%/unimcp\""));
     }
 
     #[test]
     fn the_launchd_agent_lists_every_argument_and_comes_back_after_a_crash() {
-        let odd = Launch::new(PathBuf::from("/Apps/a&b/unimcp"), 8787, Path::new("/d"));
+        let odd = Launch::new(
+            PathBuf::from("/Apps/a&b/unimcp"),
+            8787,
+            8788,
+            Path::new("/d"),
+        );
         let plist = launchd_plist(&odd);
         assert!(plist.contains("<string>/Apps/a&amp;b/unimcp</string>"));
         assert!(plist.contains("<string>--port</string>\n    <string>8787</string>"));

@@ -7,7 +7,8 @@ import { ActionCell, Button, Cell, CodeBlock, ErrorText, Table } from "./ui";
 
 const COLUMNS = ["Username", "Role", ""];
 
-export function PeopleView() {
+// The admin works on the server itself, so invites carry the address members use.
+export function PeopleView({ publicUrl }: { publicUrl?: string | null }) {
   const [people, setPeople] = useState<Person[]>([]);
   const [link, setLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -32,7 +33,7 @@ export function PeopleView() {
     setCopied(false);
     try {
       const { invite } = await serverApi<{ invite: string }>("/invites", {});
-      setLink(`${window.location.origin}/server?invite=${invite}`);
+      setLink(`${publicUrl ?? window.location.origin}/server?invite=${invite}`);
     } catch (e) {
       setError(errorMessage(e));
     }

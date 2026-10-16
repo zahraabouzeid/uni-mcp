@@ -2,7 +2,7 @@
 //! capability trait, and returns its result through [`render`], which marks
 //! it as untrusted.
 
-use std::net::Ipv4Addr;
+use std::net::IpAddr;
 use std::sync::Arc;
 
 use axum::Router;
@@ -28,7 +28,7 @@ use uni_core::model::{Document, Image};
 use crate::accounts::{self, Accounts};
 use crate::autostart::Launch;
 use crate::connectors::{Connectors, ServiceKind};
-use crate::hosting;
+use crate::hosting::{self, Host};
 use crate::store::Database;
 use crate::vault::Vault;
 
@@ -344,14 +344,23 @@ pub async fn serve(
     Ok(())
 }
 
-pub fn admin_link(port: u16, invite: &str) -> String {
-    format!("http://127.0.0.1:{port}{SERVER_PAGE}?invite={invite}")
+/// Where the server listens. Members use `port`; the admin pages are only
+/// on `admin_port`, which is meant to stay on the machine itself.
+pub struct Listen {
+    pub bind: IpAddr,
+    pub port: u16,
+    pub admin_port: u16,
+    pub public_url: Option<String>,
+}
+
+pub fn admin_link(admin_port: u16, invite: &str) -> String {
+    format!("http://127.0.0.1:{admin_port}{SERVER_PAGE}?invite={invite}")
 }
 
 /// Without `connectors` there is no university chosen on this computer, and
 /// only the accounts are served.
 pub async fn serve_http<F>(
-    port: u16,
+    listen: Listen,
     connectors: Option<F>,
     custom_instructions: Option<String>,
     database: Arc<Database>,
@@ -360,13 +369,24 @@ pub async fn serve_http<F>(
 where
     F: Fn() -> Connectors + Send + Sync + 'static,
 {
-    let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, port))
-        .await
-        .map_err(|e| format!("cannot listen on port {port}: {e}"))?;
-    let address = listener.local_addr().map_err(text)?;
-    println!("Dashboard: http://{address}{SERVER_PAGE}");
+    let open = |port: u16| async move {
+        tokio::net::TcpListener::bind((listen.bind, port))
+            .await
+            .map_err(|e| format!("cannot listen on port {port}: {e}"))
+    };
+    let members = open(listen.port).await?;
+    let admin = open(listen.admin_port).await?;
+    let member_port = members.local_addr().map_err(text)?.port();
+    let admin_port = admin.local_addr().map_err(text)?.port();
+
+    let public = listen
+        .public_url
+        .clone()
+        .unwrap_or_else(|| format!("http://127.0.0.1:{member_port}"));
+    println!("Dashboard: {public}{SERVER_PAGE}");
+    println!("Admin, on this machine only: http://127.0.0.1:{admin_port}{SERVER_PAGE}");
     if connectors.is_some() {
-        println!("MCP server: http://{address}{HTTP_PATH}");
+        println!("MCP server: {public}{HTTP_PATH}");
     }
     let accounts = Accounts::new(database.clone());
     if accounts
@@ -375,19 +395,26 @@ where
     {
         let invite = accounts.invite(accounts::now()).map_err(text)?;
         println!("Create an admin account:");
-        println!("{}", admin_link(address.port(), &invite));
+        println!("{}", admin_link(admin_port, &invite));
     }
     println!("Press Ctrl+C to stop.");
 
-    let launch = Launch::of_this_server(address.port(), data).map_err(text)?;
-    let home = Home {
-        vault: Arc::new(Vault::open(data, database.clone()).map_err(text)?),
-        accounts: Arc::new(accounts),
-        database,
-    };
-    let router = http_router(connectors, custom_instructions, home, launch);
+    let accounts = Arc::new(accounts);
+    let host = Arc::new(Host {
+        accounts: accounts.clone(),
+        launch: Launch::of_this_server(member_port, admin_port, data).map_err(text)?,
+        public_url: listen.public_url,
+    });
+    let vault = Arc::new(Vault::open(data, database.clone()).map_err(text)?);
+    let member_router = members_router(
+        connectors,
+        custom_instructions,
+        host.clone(),
+        crate::dashboard::hosted_api(accounts, vault, database),
+    );
     tokio::select! {
-        served = axum::serve(listener, router) => served.map_err(text),
+        served = axum::serve(members, member_router) => served.map_err(text),
+        served = axum::serve(admin, admin_router(host)) => served.map_err(text),
         _ = tokio::signal::ctrl_c() => {
             println!("Stopped.");
             Ok(())
@@ -395,33 +422,28 @@ where
     }
 }
 
-struct Home {
-    database: Arc<Database>,
-    accounts: Arc<Accounts>,
-    vault: Arc<Vault>,
+fn pages(api: Router) -> Router {
+    Router::new()
+        .nest("/api", api)
+        .route("/", get(|| async { Redirect::to(SERVER_PAGE) }))
+        .fallback(crate::dashboard::page)
+}
+
+fn admin_router(host: Arc<Host>) -> Router {
+    pages(hosting::admin_api(host))
 }
 
 /// Every session gets its own server, so a new login takes effect in the next one.
-fn http_router<F>(
+fn members_router<F>(
     connectors: Option<F>,
     custom_instructions: Option<String>,
-    home: Home,
-    launch: Launch,
+    host: Arc<Host>,
+    dashboards: Router,
 ) -> Router
 where
     F: Fn() -> Connectors + Send + Sync + 'static,
 {
-    let router = Router::new()
-        .nest(
-            "/api",
-            hosting::api(home.accounts.clone(), launch).merge(crate::dashboard::hosted_api(
-                home.accounts,
-                home.vault,
-                home.database,
-            )),
-        )
-        .route("/", get(|| async { Redirect::to(SERVER_PAGE) }))
-        .fallback(crate::dashboard::page);
+    let router = pages(hosting::member_api(host).merge(dashboards));
     let Some(connectors) = connectors else {
         return router;
     };
@@ -733,13 +755,18 @@ mod tests {
         };
 
         let (database, folder) = crate::store::testing::database("mcp-over-http");
-        let home = || Home {
-            accounts: Arc::new(Accounts::new(database.clone())),
-            vault: Arc::new(Vault::open(&folder, database.clone()).expect("vault")),
-            database: database.clone(),
+        let router = || {
+            let accounts = Arc::new(Accounts::new(database.clone()));
+            let vault = Arc::new(Vault::open(&folder, database.clone()).expect("vault"));
+            let host = Arc::new(Host {
+                accounts: accounts.clone(),
+                launch: crate::autostart::testing::launch(),
+                public_url: None,
+            });
+            let dashboards = crate::dashboard::hosted_api(accounts, vault, database.clone());
+            members_router(Some(connectors), None, host, dashboards)
         };
-        let launch = crate::autostart::testing::launch;
-        let answer = http_router(Some(connectors), None, home(), launch())
+        let answer = router()
             .oneshot(request("localhost"))
             .await
             .expect("response");
@@ -747,7 +774,7 @@ mod tests {
         assert!(answer.headers().contains_key("mcp-session-id"));
 
         // A page on another site that resolves to this computer is turned away.
-        let foreign = http_router(Some(connectors), None, home(), launch())
+        let foreign = router()
             .oneshot(request("evil.example"))
             .await
             .expect("response");

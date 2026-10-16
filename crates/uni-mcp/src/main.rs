@@ -17,6 +17,7 @@ mod store;
 mod vault;
 
 use std::io::IsTerminal;
+use std::net::IpAddr;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -50,10 +51,21 @@ enum Command {
     },
     /// Run the MCP server on stdio. This is the command an MCP client starts.
     Serve,
-    /// Run the MCP server over HTTP, reachable from this computer only.
+    /// Run the MCP server over HTTP with accounts, for a home server or the cloud.
     Server {
+        /// Address to listen on. The default only accepts this computer; in a
+        /// container it is `0.0.0.0`, with HTTPS in front.
+        #[arg(long, default_value = "127.0.0.1")]
+        bind: IpAddr,
+        /// Port for members: their dashboards and their AI apps.
         #[arg(long, default_value_t = 8787)]
         port: u16,
+        /// Port for the admin pages. Never make it reachable from outside.
+        #[arg(long, default_value_t = 8788)]
+        admin_port: u16,
+        /// The address members reach the server at, e.g. `https://uni.example.org`.
+        #[arg(long, env = "UNIMCP_PUBLIC_URL")]
+        public_url: Option<String>,
         /// Folder for the accounts of the server. Defaults to one in your user folder.
         #[arg(long)]
         data: Option<PathBuf>,
@@ -117,12 +129,21 @@ async fn run(cli: Cli) -> Result<(), String> {
     }
 
     if let Command::Server {
+        bind,
         port,
+        admin_port,
+        public_url,
         data,
         autostart,
     } = command
     {
-        return run_server(cli.profile, secrets, port, data, autostart).await;
+        let listen = server::Listen {
+            bind,
+            port,
+            admin_port,
+            public_url: public_url.map(|url| url.trim_end_matches('/').to_owned()),
+        };
+        return run_server(cli.profile, secrets, listen, data, autostart).await;
     }
 
     let profile_id = match cli.profile {
@@ -168,7 +189,7 @@ async fn run(cli: Cli) -> Result<(), String> {
 async fn run_server(
     profile: Option<String>,
     secrets: Arc<dyn SecretStore>,
-    port: u16,
+    listen: server::Listen,
     data: Option<PathBuf>,
     autostart: Option<Switch>,
 ) -> Result<(), String> {
@@ -192,16 +213,17 @@ async fn run_server(
             if accounts.waits_for_its_admin(now).map_err(text)? {
                 let invite = accounts.invite(now).map_err(text)?;
                 println!("Create an admin account:");
-                println!("{}", server::admin_link(port, &invite));
+                println!("{}", server::admin_link(listen.admin_port, &invite));
             }
-            let launch = autostart::Launch::of_this_server(port, &folder).map_err(text)?;
+            let launch = autostart::Launch::of_this_server(listen.port, listen.admin_port, &folder)
+                .map_err(text)?;
             let note = autostart::turn_on(&launch, true).map_err(text)?;
             let when = match autostart::MOMENT {
                 Some("boot") => "whenever this computer starts",
                 _ => "whenever you log in to this computer",
             };
             println!("The server is running in the background and starts {when}.");
-            println!("Dashboard: http://127.0.0.1:{port}/server");
+            println!("Dashboard: http://127.0.0.1:{}/server", listen.port);
             if let Some(note) = note {
                 println!("{note}");
             }
@@ -227,5 +249,5 @@ async fn run_server(
         .map(|config| config.custom_instructions)
         .unwrap_or_default();
     drop(accounts);
-    server::serve_http(port, connectors, custom_instructions, database, &folder).await
+    server::serve_http(listen, connectors, custom_instructions, database, &folder).await
 }

@@ -28,7 +28,7 @@ export function AdminConsole({ person, about, onLogOut }: Props) {
       version={about.version}
       repository={about.repository}
     >
-      {view === "people" ? <PeopleView /> : <ServerView />}
+      {view === "people" ? <PeopleView publicUrl={about.public_url} /> : <ServerView />}
     </Shell>
   );
 }
