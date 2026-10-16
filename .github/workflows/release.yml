@@ -184,6 +184,12 @@ jobs:
             --tag "$IMAGE:$version" --tag "$IMAGE:${version%.*}" --tag "$IMAGE:latest" \
             $(printf "$IMAGE@sha256:%s " *)
 
+  deploy:
+    name: Deploy
+    needs: manifest
+    uses: ./.github/workflows/deploy.yml
+    secrets: inherit
+
   publish:
     name: Publish
     needs: [version, build]
