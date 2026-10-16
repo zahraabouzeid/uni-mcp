@@ -2,6 +2,10 @@ name: Deploy
 
 on:
   workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
 
 jobs:
   server:
@@ -24,5 +28,10 @@ jobs:
           printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
-      - run: scp deploy/compose.yaml deploy/Caddyfile deploy/update.sh "$TARGET:$FOLDER/"
+      - env:
+          DOMAIN: ${{ vars.DOMAIN }}
+          VERSION: ${{ inputs.version }}
+        run: printf 'DOMAIN=%s\nUNIMCP_VERSION=%s\n' "$DOMAIN" "${VERSION#v}" > deploy/.env
+      - run: ssh "$TARGET" "mkdir -p $FOLDER"
+      - run: scp deploy/.env deploy/compose.yaml deploy/Caddyfile deploy/update.sh "$TARGET:$FOLDER/"
       - run: ssh "$TARGET" "sh $FOLDER/update.sh"

@@ -186,8 +186,10 @@ jobs:
 
   deploy:
     name: Deploy
-    needs: manifest
+    needs: [version, manifest]
     uses: ./.github/workflows/deploy.yml
+    with:
+      version: ${{ needs.version.outputs.tag }}
     secrets: inherit
 
   publish:
