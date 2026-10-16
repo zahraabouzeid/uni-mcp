@@ -16,8 +16,5 @@
 
 {$DOMAIN}:8443 {
 	import common
-	basic_auth {
-		{$ADMIN_USER} {$ADMIN_PASSWORD_HASH}
-	}
 	reverse_proxy app:8788
 }
