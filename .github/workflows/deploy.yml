@@ -3,7 +3,7 @@ name: Deploy
 on:
   workflow_call:
     inputs:
-      version:
+      service:
         type: string
         required: true
 
@@ -30,8 +30,7 @@ jobs:
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
       - env:
           DOMAIN: ${{ vars.DOMAIN }}
-          VERSION: ${{ inputs.version }}
-        run: printf 'DOMAIN=%s\nUNIMCP_VERSION=%s\n' "$DOMAIN" "${VERSION#v}" > deploy/.env
+        run: printf 'DOMAIN=%s\n' "$DOMAIN" > deploy/.env
       - run: ssh "$TARGET" "mkdir -p $FOLDER"
       - run: scp deploy/.env deploy/compose.yaml deploy/Caddyfile deploy/update.sh "$TARGET:$FOLDER/"
-      - run: ssh "$TARGET" "sh $FOLDER/update.sh"
+      - run: ssh "$TARGET" "sh $FOLDER/update.sh ${{ inputs.service }}"
