@@ -1,6 +1,6 @@
 //! The account API of a home server. The admin side, for inviting and removing
-//! people and the server's settings, is only served on the server itself; the
-//! member side, which is the one reachable from outside, has no admin at all.
+//! people and the server's settings, runs on a port of its own; the member side
+//! has no admin at all.
 
 use std::sync::Arc;
 
@@ -17,7 +17,9 @@ use uni_core::Error;
 use crate::accounts::{self, Accounts, Person, SESSION_VALID_SECONDS};
 use crate::autostart::{self, Launch};
 
-const COOKIE_NAME: &str = "unimcp_session";
+const MEMBER_COOKIE: &str = "unimcp_session";
+// Browsers send a cookie to every port of a host, so each side needs its own name.
+const ADMIN_COOKIE: &str = "unimcp_admin";
 const ADMIN_ELSEWHERE: &str = "the admin signs in on the server itself";
 
 pub struct Host {
@@ -77,24 +79,31 @@ pub fn member_api(host: Arc<Host>) -> Router {
     })
 }
 
-fn session_of(headers: &HeaderMap) -> Option<&str> {
+fn session_of<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
     headers
         .get_all(COOKIE)
         .iter()
         .filter_map(|value| value.to_str().ok())
         .flat_map(|cookies| cookies.split(';'))
-        .find_map(|cookie| cookie.trim().strip_prefix(COOKIE_NAME)?.strip_prefix('='))
+        .find_map(|cookie| cookie.trim().strip_prefix(name)?.strip_prefix('='))
 }
 
 pub(crate) fn person_in(accounts: &Accounts, headers: &HeaderMap) -> Option<Person> {
-    session_of(headers).and_then(|session| accounts.person_of(session, accounts::now()))
+    session_of(headers, MEMBER_COOKIE)
+        .and_then(|session| accounts.person_of(session, accounts::now()))
 }
 
 impl Side {
-    /// Browsers send a cookie to every port of a host, so an admin session
-    /// can arrive on the member side too, where it counts for nothing.
+    fn cookie(&self) -> &'static str {
+        match self.members_only {
+            true => MEMBER_COOKIE,
+            false => ADMIN_COOKIE,
+        }
+    }
+
     fn logged_in(&self, headers: &HeaderMap) -> Result<Person, Refusal> {
-        person_in(&self.host.accounts, headers)
+        session_of(headers, self.cookie())
+            .and_then(|session| self.host.accounts.person_of(session, accounts::now()))
             .filter(|person| !(self.members_only && person.admin))
             .ok_or_else(|| Refusal(StatusCode::UNAUTHORIZED, "log in first".into()))
     }
@@ -123,11 +132,12 @@ impl Side {
 
     /// The cookie is for this site's own pages only and hidden from scripts.
     fn with_session(&self, person: Person, session: Option<&str>) -> Response {
+        let name = self.cookie();
         let cookie = match session {
             Some(session) => format!(
-                "{COOKIE_NAME}={session}; Max-Age={SESSION_VALID_SECONDS}; Path=/; HttpOnly; Secure; SameSite=Strict"
+                "{name}={session}; Max-Age={SESSION_VALID_SECONDS}; Path=/; HttpOnly; Secure; SameSite=Strict"
             ),
-            None => format!("{COOKIE_NAME}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Strict"),
+            None => format!("{name}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Strict"),
         };
         ([(SET_COOKIE, cookie)], Json(self.about(person))).into_response()
     }
@@ -212,7 +222,7 @@ async fn blocking<T: Send + 'static>(
 
 async fn log_out(State(side): State<Side>, headers: HeaderMap) -> Answer {
     let person = side.logged_in(&headers)?;
-    if let Some(session) = session_of(&headers) {
+    if let Some(session) = session_of(&headers, side.cookie()) {
         side.host.accounts.log_out(session)?;
     }
     Ok(side.with_session(person, None))
@@ -282,7 +292,11 @@ mod tests {
             .uri(path)
             .header("content-type", "application/json");
         if let Some(session) = session {
-            request = request.header(COOKIE, format!("other=1; {COOKIE_NAME}={session}"));
+            let name = match on {
+                On::Admin => ADMIN_COOKIE,
+                On::Members => MEMBER_COOKIE,
+            };
+            request = request.header(COOKIE, format!("other=1; {name}={session}"));
         }
         let request = request.body(Body::from(body.to_string())).expect("request");
         let api = match on {
@@ -307,10 +321,8 @@ mod tests {
         let cookie = cookie.expect("a session cookie");
         assert!(cookie.contains("HttpOnly") && cookie.contains("SameSite=Strict"));
         let value = cookie.split(';').next().expect("value");
-        value
-            .strip_prefix(&format!("{COOKIE_NAME}="))
-            .expect("name")
-            .to_owned()
+        let (_, session) = value.split_once('=').expect("name");
+        session.to_owned()
     }
 
     /// An admin and a member, with a session each.
@@ -340,6 +352,11 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["person"]["admin"], true);
         assert_eq!(body["about"]["public_url"], "https://uni.example");
+        assert!(
+            cookie
+                .as_deref()
+                .is_some_and(|c| c.starts_with("unimcp_admin="))
+        );
         let session = session_in(cookie);
 
         let me = |session: String| {
@@ -444,7 +461,7 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::OK);
-        assert!(cookie.is_some());
+        assert!(cookie.is_some_and(|c| c.starts_with("unimcp_session=")));
         let (status, _, _) = call(
             &accounts,
             On::Members,
