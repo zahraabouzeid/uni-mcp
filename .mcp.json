@@ -1,8 +1,3 @@
 {
-  "mcpServers": {
-    "uniMCP": {
-      "command": "unimcp",
-      "args": ["serve"]
-    }
-  }
+  "mcpServers": {}
 }
