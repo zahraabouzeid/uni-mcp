@@ -1,17 +1,19 @@
 "use client";
 
-import { type FormEvent, type ReactNode, useState } from "react";
+import { type FormEvent, type ReactNode, useState, useSyncExternalStore } from "react";
 import { errorMessage } from "@/lib/api";
 import { serverApi, type Session } from "@/lib/server-api";
+import { Brand } from "./brand";
 import { Button, ErrorText, Field } from "./ui";
 
 type Props = { onDone: (session: Session) => void };
 
-export function LogIn({ onDone }: Props) {
+export function LogIn({ onDone, intro }: Props & { intro?: ReactNode }) {
   return (
-    <AccountForm title="Log in" action="Log in" path="/account/login" onDone={onDone}>
-      <Field required label="Username" name="name" autoComplete="username" />
+    <AccountForm title="Log in" action="Log in" path="/account/login" intro={intro} onDone={onDone}>
+      <Field fill required label="Username" name="name" autoComplete="username" />
       <Field
+        fill
         required
         label="Password"
         name="password"
@@ -32,6 +34,7 @@ export function Join({ invite, onDone }: Props & { invite: string }) {
       onDone={onDone}
     >
       <Field
+        fill
         required
         label="Username"
         name="name"
@@ -42,6 +45,7 @@ export function Join({ invite, onDone }: Props & { invite: string }) {
         title="Letters, digits, dots, hyphens and underscores, no spaces"
       />
       <Field
+        fill
         required
         label="Password"
         name="password"
@@ -56,13 +60,14 @@ export function Join({ invite, onDone }: Props & { invite: string }) {
 
 type FormProps = Props & {
   title: string;
+  intro?: ReactNode;
   action: string;
   path: string;
   extra?: Record<string, string>;
   children: ReactNode;
 };
 
-function AccountForm({ title, action, path, extra, onDone, children }: FormProps) {
+function AccountForm({ title, intro, action, path, extra, onDone, children }: FormProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -85,15 +90,38 @@ function AccountForm({ title, action, path, extra, onDone, children }: FormProps
   }
 
   return (
-    <main className="grid min-h-screen place-items-center px-6">
-      <form onSubmit={submit} className="grid w-60 gap-4">
-        <h1 className="text-lg font-semibold">{title}</h1>
+    <Card>
+      <form onSubmit={submit} className="grid gap-4">
+        <div className="grid gap-1">
+          <h1 className="text-lg font-semibold">{title}</h1>
+          {intro && <p className="text-muted">{intro}</p>}
+        </div>
         {children}
-        <Button type="submit" variant="primary" disabled={busy}>
+        <Button type="submit" variant="primary" size="large" disabled={busy}>
           {action}
         </Button>
         {error && <ErrorText>{error}</ErrorText>}
       </form>
+    </Card>
+  );
+}
+
+export function Card({ children }: { children: ReactNode }) {
+  const host = useSyncExternalStore(
+    () => () => {},
+    () => window.location.host,
+    () => "",
+  );
+
+  return (
+    <main className="grid min-h-screen place-items-center px-4 py-10">
+      <div className="grid w-full max-w-sm gap-6">
+        <header className="grid justify-items-center gap-1 text-center">
+          <Brand className="text-2xl text-[#10497e] dark:text-white" />
+          <p className="text-xs text-muted">{host}</p>
+        </header>
+        <div className="sm:rounded-xl sm:border sm:border-line sm:p-8">{children}</div>
+      </div>
     </main>
   );
 }

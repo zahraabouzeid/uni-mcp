@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Brand } from "./brand";
 import { Button } from "./ui";
 
 export type Entry<View extends string> = { view: View; label: string; count?: string };
@@ -27,14 +28,8 @@ export function Shell<View extends string>(props: Props<View>) {
         className="flex w-60 shrink-0 flex-col overflow-y-auto text-white"
         style={{ backgroundColor: color ?? NEUTRAL }}
       >
-        <p className="flex h-14 shrink-0 items-center bg-black/25 px-4 text-lg tracking-tight">
-          {/* The icon as a mask, so it takes the text colour. */}
-          <span
-            aria-hidden
-            className="mr-2 size-7 bg-current [mask:url(/icon.svg)_center/contain_no-repeat]"
-          />
-          <span className="font-light">uni</span>
-          <span className="font-bold">MCP</span>
+        <p className="flex h-14 shrink-0 items-center bg-black/25 px-4 text-lg">
+          <Brand />
         </p>
 
         <nav className="mt-4 grid gap-0.5 px-3">
