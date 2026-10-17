@@ -9,23 +9,16 @@ could help me with my own courses, files, timetable and even the canteen menu.
 
 uniMCP is an [MCP](https://modelcontextprotocol.io) server that gives your AI
 assistant read-only access to your university services. It runs locally on
-your computer.
+your computer or on your own server, where several users can connect from any
+device.
 
 Unofficial, and not affiliated with any university.
 
+![The dashboard](docs/screenshots/dashboard.png)
+
 ## Tools
 
-| Tool                | Description                                        |
-| ------------------- | -------------------------------------------------- |
-| `list_courses`      | Lists the courses you are enrolled in              |
-| `list_course_files` | Lists slides, exercise sheets and other files      |
-| `list_assignments`  | Lists assignments and their deadlines              |
-| `read_course_file`  | Reads a course file in any supported format        |
-| `list_events`       | Lists your lectures, exercises and exam dates      |
-| `list_canteen_menu` | Lists canteen menus with prices and allergens      |
-| `list_files`        | Lists a folder in your cloud storage               |
-| `read_file`         | Reads a cloud storage file in any supported format |
-| `status`            | Shows which services are connected                 |
+![The tools on the dashboard](docs/screenshots/tools.png)
 
 ### Supported file formats
 
@@ -56,13 +49,16 @@ Prompt templates, available in clients that support MCP prompts:
 ## Security and privacy
 
 - **Read-only.** No tool can modify, send, submit or delete anything.
-- **Local.** uniMCP runs on your computer and fetches your data directly from
-  the university.
+- **Yours.** uniMCP runs on your computer or your own server and fetches your
+  data directly from the university.
 - **No university password.** Moodle uses the university's own sign-in page,
   cloud storage an app password, and the calendar a link you publish yourself.
   The canteen menu is public and requires no login.
-- **Credentials stay in your system keyring** and are never exposed to the AI
-  assistant.
+- **Credentials stay in your system keyring**, or encrypted on your server,
+  and are never exposed to the AI assistant.
+- **AI assistants connect only with your permission.** On a server, an AI
+  assistant gets access only after you log in and allow it, and only to your
+  own account.
 
 ## Supported universities
 
@@ -95,6 +91,14 @@ programme or where you keep your examination regulations.
 
 Browser sign-in for Moodle is currently available on Windows only. On other
 platforms, run `unimcp login moodle` and paste the link when prompted.
+
+### Running on a server
+
+In server mode, one uniMCP serves several people, and each connects Claude,
+ChatGPT and other AI assistants from any device. See
+[deploy/README.md](deploy/README.md) for running it with Docker.
+
+![Allowing an AI assistant to connect](docs/screenshots/consent.png)
 
 ### Building from source
 
