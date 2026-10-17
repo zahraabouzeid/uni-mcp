@@ -317,11 +317,11 @@ fn random_bytes<const N: usize>() -> Result<[u8; N]> {
     Ok(bytes)
 }
 
-fn random_code() -> Result<String> {
+pub(crate) fn random_code() -> Result<String> {
     Ok(hex(&random_bytes::<32>()?))
 }
 
-fn fingerprint(code: &str) -> String {
+pub(crate) fn fingerprint(code: &str) -> String {
     hex(&Sha256::digest(code.as_bytes()))
 }
 

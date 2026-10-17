@@ -2,14 +2,20 @@
 //! capability trait, and returns its result through [`render`], which marks
 //! it as untrusted.
 
+use std::collections::HashMap;
 use std::net::IpAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use axum::Router;
-use axum::response::Redirect;
-use axum::routing::get;
+use axum::body::Body;
+use axum::extract::State;
+use axum::http::StatusCode;
+use axum::http::header::{AUTHORIZATION, WWW_AUTHENTICATE};
+use axum::response::{IntoResponse, Redirect, Response};
+use axum::routing::{any, get};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
+use reqwest::Url;
 use rmcp::handler::server::router::prompt::PromptRouter;
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
@@ -24,11 +30,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use uni_core::document::{Request, View};
 use uni_core::model::{Document, Image};
+use uni_core::profile::Profile;
+use uni_core::secrets::SecretStore;
 
 use crate::accounts::{self, Accounts};
 use crate::autostart::Launch;
+use crate::config;
 use crate::connectors::{Connectors, ServiceKind};
 use crate::hosting::{self, Host};
+use crate::oauth::{self, OAuth};
 use crate::store::Database;
 use crate::vault::Vault;
 
@@ -366,18 +376,11 @@ pub fn admin_link(admin_address: &str, invite: &str) -> String {
     format!("{admin_address}{SERVER_PAGE}?invite={invite}")
 }
 
-/// Without `connectors` there is no university chosen on this computer, and
-/// only the accounts are served.
-pub async fn serve_http<F>(
+pub async fn serve_http(
     listen: Listen,
-    connectors: Option<F>,
-    custom_instructions: Option<String>,
     database: Arc<Database>,
     data: &std::path::Path,
-) -> Result<(), String>
-where
-    F: Fn() -> Connectors + Send + Sync + 'static,
-{
+) -> Result<(), String> {
     let open = |port: u16| async move {
         tokio::net::TcpListener::bind((listen.bind, port))
             .await
@@ -395,9 +398,7 @@ where
     println!("Dashboard: {public}{SERVER_PAGE}");
     let admin_address = listen.admin_address(admin_port);
     println!("Admin: {admin_address}{SERVER_PAGE}");
-    if connectors.is_some() {
-        println!("MCP server: {public}{HTTP_PATH}");
-    }
+    println!("MCP server: {public}{HTTP_PATH}");
     let accounts = Accounts::new(database.clone());
     if accounts
         .waits_for_its_admin(accounts::now())
@@ -416,12 +417,20 @@ where
         public_url: listen.public_url,
     });
     let vault = Arc::new(Vault::open(data, database.clone()).map_err(text)?);
-    let member_router = members_router(
-        connectors,
-        custom_instructions,
-        host.clone(),
-        crate::dashboard::hosted_api(accounts, vault, database),
-    );
+    let oauth = Arc::new(OAuth::new(database.clone()));
+    let mcp = Arc::new(AccountMcp::new(
+        oauth.clone(),
+        vault.clone(),
+        database.clone(),
+        &public,
+    ));
+    let api = crate::dashboard::hosted_api(accounts.clone(), vault, database).merge(oauth::api(
+        oauth.clone(),
+        accounts.clone(),
+        &public,
+    ));
+    let member_router =
+        members_router(host.clone(), api, mcp).merge(oauth::routes(oauth, accounts, &public));
     tokio::select! {
         served = axum::serve(members, member_router) => served.map_err(text),
         served = axum::serve(admin, admin_router(host)) => served.map_err(text),
@@ -443,28 +452,96 @@ fn admin_router(host: Arc<Host>) -> Router {
     pages(hosting::admin_api(host))
 }
 
-/// Every session gets its own server, so a new login takes effect in the next one.
-fn members_router<F>(
-    connectors: Option<F>,
-    custom_instructions: Option<String>,
-    host: Arc<Host>,
-    dashboards: Router,
-) -> Router
-where
-    F: Fn() -> Connectors + Send + Sync + 'static,
-{
-    let router = pages(hosting::member_api(host).merge(dashboards));
-    let Some(connectors) = connectors else {
-        return router;
+fn members_router(host: Arc<Host>, api: Router, mcp: Arc<AccountMcp>) -> Router {
+    pages(hosting::member_api(host).merge(api)).route(HTTP_PATH, any(serve_account).with_state(mcp))
+}
+
+type AccountService = StreamableHttpService<UniServer, LocalSessionManager>;
+
+/// `/mcp` on a server: every request needs an access token from an app a
+/// member allowed, and is served with that member's university and logins.
+/// Each account has its own sessions, so a session id works for its account only.
+struct AccountMcp {
+    oauth: Arc<OAuth>,
+    vault: Arc<Vault>,
+    database: Arc<Database>,
+    base: String,
+    config: StreamableHttpServerConfig,
+    services: Mutex<HashMap<String, AccountService>>,
+}
+
+impl AccountMcp {
+    fn new(oauth: Arc<OAuth>, vault: Arc<Vault>, database: Arc<Database>, base: &str) -> Self {
+        let mut config = StreamableHttpServerConfig::default();
+        if let Ok(url) = Url::parse(base)
+            && let Some(host) = url.host_str()
+        {
+            config.allowed_hosts.push(host.to_owned());
+            if let Some(port) = url.port() {
+                config.allowed_hosts.push(format!("{host}:{port}"));
+            }
+        }
+        Self {
+            oauth,
+            vault,
+            database,
+            base: base.to_owned(),
+            config,
+            services: Mutex::default(),
+        }
+    }
+
+    /// A new session reads the account's settings, so a change takes effect in the next one.
+    fn service_of(&self, account: &str) -> AccountService {
+        let mut services = self.services.lock().unwrap_or_else(PoisonError::into_inner);
+        services
+            .entry(account.to_owned())
+            .or_insert_with(|| {
+                let settings = config::Settings::Account {
+                    database: self.database.clone(),
+                    account: account.to_owned(),
+                };
+                let secrets: Arc<dyn SecretStore> = Arc::new(self.vault.secrets_of(account));
+                let failed = |e: uni_core::Error| std::io::Error::other(e.to_string());
+                StreamableHttpService::new(
+                    move || {
+                        let config = settings.load().map_err(failed)?;
+                        let id = config.profile.ok_or_else(|| {
+                            std::io::Error::other("choose a university on the dashboard first")
+                        })?;
+                        let profile = Profile::builtin(&id).map_err(failed)?;
+                        Ok(UniServer::new(Connectors::new(profile, secrets.clone()))
+                            .with_custom_instructions(config.custom_instructions))
+                    },
+                    Arc::new(LocalSessionManager::default()),
+                    self.config.clone(),
+                )
+            })
+            .clone()
+    }
+}
+
+async fn serve_account(
+    State(mcp): State<Arc<AccountMcp>>,
+    request: axum::extract::Request,
+) -> Response {
+    let account = request
+        .headers()
+        .get(AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .and_then(|token| mcp.oauth.account_of(token, accounts::now()));
+    let Some(account) = account else {
+        let challenge = format!(
+            "Bearer resource_metadata=\"{}\"",
+            oauth::resource_metadata(&mcp.base)
+        );
+        return (StatusCode::UNAUTHORIZED, [(WWW_AUTHENTICATE, challenge)]).into_response();
     };
-    let service = StreamableHttpService::new(
-        move || {
-            Ok(UniServer::new(connectors()).with_custom_instructions(custom_instructions.clone()))
-        },
-        Arc::new(LocalSessionManager::default()),
-        StreamableHttpServerConfig::default(),
-    );
-    router.nest_service(HTTP_PATH, service)
+    mcp.service_of(&account)
+        .handle(request)
+        .await
+        .map(Body::new)
 }
 
 fn render<T: Serialize>(kind: &str, result: uni_core::Result<T>) -> ToolResult {
@@ -755,42 +832,99 @@ mod tests {
                 "clientInfo": { "name": "test", "version": "0" },
             },
         });
-        let request = |host: &str| {
-            Request::post(HTTP_PATH)
+        let request = |host: &str, token: Option<&str>| {
+            let mut request = Request::post(HTTP_PATH)
                 .header(header::HOST, host)
                 .header(header::CONTENT_TYPE, "application/json")
-                .header(header::ACCEPT, "application/json, text/event-stream")
+                .header(header::ACCEPT, "application/json, text/event-stream");
+            if let Some(token) = token {
+                request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
+            }
+            request
                 .body(Body::from(hello.to_string()))
                 .expect("request")
         };
 
+        let base = "https://uni.example";
         let (database, folder) = crate::store::testing::database("mcp-over-http");
-        let router = || {
-            let accounts = Arc::new(Accounts::new(database.clone()));
-            let vault = Arc::new(Vault::open(&folder, database.clone()).expect("vault"));
-            let host = Arc::new(Host {
-                accounts: accounts.clone(),
-                launch: crate::autostart::testing::launch(),
-                public_url: None,
-            });
-            let dashboards = crate::dashboard::hosted_api(accounts, vault, database.clone());
-            members_router(Some(connectors), None, host, dashboards)
+        let accounts = Arc::new(Accounts::new(database.clone()));
+        crate::accounts::testing::join(&accounts, "Zahraa");
+        let (member, _) = crate::accounts::testing::join(&accounts, "Bestie");
+        let settings = config::Settings::Account {
+            database: database.clone(),
+            account: member.id.clone(),
         };
-        let answer = router()
-            .oneshot(request("localhost"))
+        let chosen = config::Config {
+            profile: Some("rwth".into()),
+            custom_instructions: None,
+        };
+        settings.save(&chosen).expect("university");
+
+        let oauth = Arc::new(OAuth::new(database.clone()));
+        let redirect = "https://claude.ai/api/mcp/auth_callback";
+        let verifier = "a-verifier-that-is-long-enough-for-pkce-0123456789";
+        let challenge = oauth::challenge_of(verifier);
+        let app = oauth
+            .register("Claude", &[redirect.into()], accounts::now())
+            .expect("register");
+        let code = oauth
+            .allow(&member.id, &app, redirect, &challenge, accounts::now())
+            .expect("allow");
+        let tokens = oauth
+            .exchange(&code, &app, redirect, verifier, accounts::now())
+            .expect("tokens");
+
+        let vault = Arc::new(Vault::open(&folder, database.clone()).expect("vault"));
+        let host = Arc::new(Host {
+            accounts: accounts.clone(),
+            launch: crate::autostart::testing::launch(),
+            public_url: Some(base.into()),
+        });
+        let mcp = Arc::new(AccountMcp::new(
+            oauth,
+            vault.clone(),
+            database.clone(),
+            base,
+        ));
+        let api = crate::dashboard::hosted_api(accounts.clone(), vault, database.clone());
+        let router = members_router(host, api, mcp);
+
+        let anonymous = router
+            .clone()
+            .oneshot(request("uni.example", None))
+            .await
+            .expect("response");
+        assert_eq!(anonymous.status(), StatusCode::UNAUTHORIZED);
+        let challenge = anonymous.headers()[header::WWW_AUTHENTICATE]
+            .to_str()
+            .expect("header");
+        assert!(challenge.contains(
+            "resource_metadata=\"https://uni.example/.well-known/oauth-protected-resource/mcp\""
+        ));
+        let made_up = router
+            .clone()
+            .oneshot(request("uni.example", Some("made up")))
+            .await
+            .expect("response");
+        assert_eq!(made_up.status(), StatusCode::UNAUTHORIZED);
+
+        let answer = router
+            .clone()
+            .oneshot(request("uni.example", Some(&tokens.access)))
             .await
             .expect("response");
         assert_eq!(answer.status(), StatusCode::OK);
         assert!(answer.headers().contains_key("mcp-session-id"));
 
-        // A page on another site that resolves to this computer is turned away.
-        let foreign = router()
-            .oneshot(request("evil.example"))
+        // A page on another site that resolves to this server is turned away.
+        let foreign = router
+            .oneshot(request("evil.example", Some(&tokens.access)))
             .await
             .expect("response");
         assert_ne!(foreign.status(), StatusCode::OK);
-        drop(database);
-        std::fs::remove_dir_all(folder).expect("clean up");
+        drop((accounts, settings, database));
+        // The session the test opened holds the database until it times out.
+        let _ = std::fs::remove_dir_all(folder);
     }
 
     #[test]

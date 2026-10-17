@@ -10,6 +10,7 @@ mod dashboard;
 mod hosting;
 mod launch;
 mod login;
+mod oauth;
 mod prompts;
 mod scheme;
 mod server;
@@ -148,7 +149,7 @@ async fn run(cli: Cli) -> Result<(), String> {
             public_url: public_url.map(|url| url.trim_end_matches('/').to_owned()),
             admin_url: admin_url.map(|url| url.trim_end_matches('/').to_owned()),
         };
-        return run_server(cli.profile, secrets, listen, data, autostart).await;
+        return run_server(listen, data, autostart).await;
     }
 
     let profile_id = match cli.profile {
@@ -189,11 +190,9 @@ async fn run(cli: Cli) -> Result<(), String> {
     }
 }
 
-/// The server mode works on a computer where no university was ever chosen:
-/// then it serves the accounts and their dashboard only.
+/// The server mode serves accounts only: each member chooses a university
+/// on the dashboard, and AI apps connect with a member's permission.
 async fn run_server(
-    profile: Option<String>,
-    secrets: Arc<dyn SecretStore>,
     listen: server::Listen,
     data: Option<PathBuf>,
     autostart: Option<Switch>,
@@ -243,17 +242,6 @@ async fn run_server(
         None => {}
     }
 
-    let chosen = profile.or_else(|| config::load().ok()?.profile);
-    let connectors = match chosen {
-        Some(id) => {
-            let profile = Profile::builtin(&id).map_err(text)?;
-            Some(move || Connectors::new(profile.clone(), secrets.clone()))
-        }
-        None => None,
-    };
-    let custom_instructions = config::load()
-        .map(|config| config.custom_instructions)
-        .unwrap_or_default();
     drop(accounts);
-    server::serve_http(listen, connectors, custom_instructions, database, &folder).await
+    server::serve_http(listen, database, &folder).await
 }
