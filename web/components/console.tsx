@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { announceClosing, api, errorMessage, type DashboardState } from "@/lib/api";
 import type { Person } from "@/lib/server-api";
+import { ConnectView } from "./connect-view";
 import { SERVICE_COLUMNS, ServiceRow } from "./service-row";
 import { SettingsView } from "./settings-view";
 import { SetupView } from "./setup-view";
@@ -79,7 +80,7 @@ export function Console({ account }: { account?: Account }) {
         { view: "services", label: "Services", count: `${connected}/${state.services.length}` },
         { view: "tools", label: "Tools", count: String(state.tools.length) },
         // Without a command there is nothing to hand to an AI app yet.
-        ...(state.command ? [{ view: "setup", label: "Setup" } as Entry<View>] : []),
+        ...(state.command || hosted ? [{ view: "setup", label: "Setup" } as Entry<View>] : []),
         { view: "settings", label: "Settings" },
       ]
     : [{ view: "services", label: "University" }];
@@ -163,6 +164,8 @@ export function Console({ account }: { account?: Account }) {
           limit={state.custom_instructions_limit}
           onSaved={load}
         />
+      ) : hosted ? (
+        <ConnectView />
       ) : (
         state.command && <SetupView command={state.command} apps={state.apps} onChanged={load} />
       )}
