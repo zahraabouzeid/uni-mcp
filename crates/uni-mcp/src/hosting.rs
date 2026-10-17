@@ -7,6 +7,7 @@ use std::sync::Arc;
 use axum::extract::State;
 use axum::http::header::{COOKIE, SET_COOKIE};
 use axum::http::{HeaderMap, StatusCode};
+use axum::middleware;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -16,6 +17,7 @@ use uni_core::Error;
 
 use crate::accounts::{self, Accounts, Person, SESSION_VALID_SECONDS};
 use crate::autostart::{self, Launch};
+use crate::guard::{self, Guard, Kind};
 
 const MEMBER_COOKIE: &str = "unimcp_session";
 // Browsers send a cookie to every port of a host, so each side needs its own name.
@@ -24,6 +26,7 @@ const ADMIN_ELSEWHERE: &str = "the admin signs in on the server itself";
 
 pub struct Host {
     pub accounts: Arc<Accounts>,
+    pub guard: Arc<Guard>,
     pub launch: Launch,
     /// Where members reach the server, for the links in invites.
     pub public_url: Option<String>,
@@ -51,16 +54,17 @@ impl IntoResponse for Refusal {
 
 type Answer = Result<Response, Refusal>;
 
-fn account_routes() -> Router<Side> {
+fn account_routes(guard: &Arc<Guard>) -> Router<Side> {
+    let limited = || middleware::from_fn_with_state((guard.clone(), Kind::Login), guard::limit);
     Router::new()
-        .route("/account/accept", post(accept))
-        .route("/account/login", post(log_in))
+        .route("/account/accept", post(accept).layer(limited()))
+        .route("/account/login", post(log_in).layer(limited()))
         .route("/account/logout", post(log_out))
         .route("/account/me", get(me))
 }
 
 pub fn admin_api(host: Arc<Host>) -> Router {
-    account_routes()
+    account_routes(&host.guard)
         .route("/people", get(people))
         .route("/people/remove", post(remove))
         .route("/invites", post(invite))
@@ -73,7 +77,7 @@ pub fn admin_api(host: Arc<Host>) -> Router {
 }
 
 pub fn member_api(host: Arc<Host>) -> Router {
-    account_routes().with_state(Side {
+    account_routes(&host.guard).with_state(Side {
         host,
         members_only: true,
     })
@@ -274,6 +278,7 @@ mod tests {
     fn host(accounts: &Arc<Accounts>) -> Arc<Host> {
         Arc::new(Host {
             accounts: accounts.clone(),
+            guard: Guard::new(false),
             launch: crate::autostart::testing::launch(),
             public_url: Some("https://uni.example".into()),
         })

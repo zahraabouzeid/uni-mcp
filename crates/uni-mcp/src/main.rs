@@ -7,6 +7,7 @@ mod autostart;
 mod config;
 mod connectors;
 mod dashboard;
+mod guard;
 mod hosting;
 mod launch;
 mod login;
@@ -70,6 +71,9 @@ enum Command {
         /// The address of the admin pages from outside, if they are reachable there.
         #[arg(long, env = "UNIMCP_ADMIN_URL")]
         admin_url: Option<String>,
+        /// Trust the client address a reverse proxy such as Caddy passes on.
+        #[arg(long, env = "UNIMCP_BEHIND_PROXY")]
+        behind_proxy: bool,
         /// Folder for the accounts of the server. Defaults to one in your user folder.
         #[arg(long)]
         data: Option<PathBuf>,
@@ -138,6 +142,7 @@ async fn run(cli: Cli) -> Result<(), String> {
         admin_port,
         public_url,
         admin_url,
+        behind_proxy,
         data,
         autostart,
     } = command
@@ -148,6 +153,7 @@ async fn run(cli: Cli) -> Result<(), String> {
             admin_port,
             public_url: public_url.map(|url| url.trim_end_matches('/').to_owned()),
             admin_url: admin_url.map(|url| url.trim_end_matches('/').to_owned()),
+            behind_proxy,
         };
         return run_server(listen, data, autostart).await;
     }

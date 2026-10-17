@@ -3,7 +3,7 @@
 //! it as untrusted.
 
 use std::collections::HashMap;
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use axum::Router;
@@ -11,6 +11,7 @@ use axum::body::Body;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::http::header::{AUTHORIZATION, WWW_AUTHENTICATE};
+use axum::middleware;
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{any, get};
 use base64::Engine;
@@ -37,6 +38,7 @@ use crate::accounts::{self, Accounts};
 use crate::autostart::Launch;
 use crate::config;
 use crate::connectors::{Connectors, ServiceKind};
+use crate::guard::{self, Guard};
 use crate::hosting::{self, Host};
 use crate::oauth::{self, OAuth};
 use crate::store::Database;
@@ -362,6 +364,7 @@ pub struct Listen {
     pub admin_port: u16,
     pub public_url: Option<String>,
     pub admin_url: Option<String>,
+    pub behind_proxy: bool,
 }
 
 impl Listen {
@@ -411,8 +414,10 @@ pub async fn serve_http(
     println!("Press Ctrl+C to stop.");
 
     let accounts = Arc::new(accounts);
+    let guard = Guard::new(listen.behind_proxy);
     let host = Arc::new(Host {
         accounts: accounts.clone(),
+        guard: guard.clone(),
         launch: Launch::of_this_server(member_port, admin_port, data).map_err(text)?,
         public_url: listen.public_url,
     });
@@ -428,12 +433,18 @@ pub async fn serve_http(
         oauth.clone(),
         accounts.clone(),
         &public,
+        &guard,
     ));
-    let member_router =
-        members_router(host.clone(), api, mcp).merge(oauth::routes(oauth, accounts, &public));
+    let member_router = members_router(host.clone(), api, mcp)
+        .merge(oauth::routes(oauth, accounts, &public, &guard))
+        .layer(middleware::from_fn(guard::security_headers))
+        .into_make_service_with_connect_info::<SocketAddr>();
+    let admin_router = admin_router(host)
+        .layer(middleware::from_fn(guard::security_headers))
+        .into_make_service_with_connect_info::<SocketAddr>();
     tokio::select! {
         served = axum::serve(members, member_router) => served.map_err(text),
-        served = axum::serve(admin, admin_router(host)) => served.map_err(text),
+        served = axum::serve(admin, admin_router) => served.map_err(text),
         _ = tokio::signal::ctrl_c() => {
             println!("Stopped.");
             Ok(())
@@ -443,7 +454,7 @@ pub async fn serve_http(
 
 fn pages(api: Router) -> Router {
     Router::new()
-        .nest("/api", api)
+        .nest("/api", api.layer(middleware::from_fn(guard::same_origin)))
         .route("/", get(|| async { Redirect::to(SERVER_PAGE) }))
         .fallback(crate::dashboard::page)
 }
@@ -874,6 +885,7 @@ mod tests {
         let vault = Arc::new(Vault::open(&folder, database.clone()).expect("vault"));
         let host = Arc::new(Host {
             accounts: accounts.clone(),
+            guard: Guard::new(false),
             launch: crate::autostart::testing::launch(),
             public_url: Some(base.into()),
         });
@@ -912,6 +924,15 @@ mod tests {
             .expect("response");
         assert_eq!(answer.status(), StatusCode::OK);
         assert!(answer.headers().contains_key("mcp-session-id"));
+
+        let elsewhere = Request::post("/api/account/login")
+            .header(header::HOST, "uni.example")
+            .header(header::ORIGIN, "https://evil.example")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(r#"{"name":"Sam","password":"guess"}"#))
+            .expect("request");
+        let refused = router.clone().oneshot(elsewhere).await.expect("response");
+        assert_eq!(refused.status(), StatusCode::FORBIDDEN);
 
         // A page on another site that resolves to this server is turned away.
         let foreign = router
