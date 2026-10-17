@@ -54,6 +54,14 @@ export function Join({ invite, onDone }: Props & { invite: string }) {
         minLength={10}
         title="At least 10 characters"
       />
+      <Field
+        fill
+        required
+        label="Confirm password"
+        name="confirm"
+        type="password"
+        autoComplete="new-password"
+      />
     </AccountForm>
   );
 }
@@ -74,6 +82,10 @@ function AccountForm({ title, intro, action, path, extra, onDone, children }: Fo
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    if (form.has("confirm") && form.get("confirm") !== form.get("password")) {
+      setError("The passwords do not match.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {

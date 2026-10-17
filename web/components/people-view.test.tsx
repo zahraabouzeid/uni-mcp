@@ -77,6 +77,7 @@ test("accepting an invite sends it with the chosen name and password", async () 
 
   await user.type(screen.getByLabelText("Username"), "Sam");
   await user.type(screen.getByLabelText("Password"), "correct horse battery");
+  await user.type(screen.getByLabelText("Confirm password"), "correct horse battery");
   await user.click(screen.getByRole("button", { name: "Create account" }));
 
   expect(serverApi).toHaveBeenCalledWith("/account/accept", {
@@ -85,6 +86,21 @@ test("accepting an invite sends it with the chosen name and password", async () 
     password: "correct horse battery",
   });
   expect(onDone).toHaveBeenCalledWith(session);
+});
+
+test("a new account needs the same password twice", async () => {
+  const onDone = vi.fn();
+  const user = userEvent.setup();
+  render(<Join invite="c0de" onDone={onDone} />);
+
+  await user.type(screen.getByLabelText("Username"), "Sam");
+  await user.type(screen.getByLabelText("Password"), "correct horse battery");
+  await user.type(screen.getByLabelText("Confirm password"), "correct horse batery");
+  await user.click(screen.getByRole("button", { name: "Create account" }));
+
+  expect((await screen.findByRole("alert")).textContent).toBe("The passwords do not match.");
+  expect(serverApi).not.toHaveBeenCalled();
+  expect(onDone).not.toHaveBeenCalled();
 });
 
 test("a refused login shows why and stays on the form", async () => {
