@@ -9,22 +9,22 @@
 	}
 }
 
-{$DOMAIN}, {$DOMAIN}:8444 {
+{$DOMAIN} {
 	import common
 	reverse_proxy app:8787
 }
 
-{$DOMAIN}:8443 {
+admin.{$DOMAIN} {
 	import common
 	reverse_proxy app:8788
 }
 
-{$DOMAIN}:9444 {
+dev.{$DOMAIN} {
 	import common
 	reverse_proxy app-dev:8787
 }
 
-{$DOMAIN}:9443 {
+admin.dev.{$DOMAIN} {
 	import common
 	reverse_proxy app-dev:8788
 }

@@ -13,7 +13,10 @@ const FILE: &str = "unimcp.db";
 
 /// In the order they are applied. A released script is never changed again;
 /// a change to the tables is a new script at the end.
-const MIGRATIONS: &[&str] = &[include_str!("../migrations/0001_accounts.sql")];
+const MIGRATIONS: &[&str] = &[
+    include_str!("../migrations/0001_accounts.sql"),
+    include_str!("../migrations/0002_oauth.sql"),
+];
 
 pub struct Database {
     connection: Mutex<Connection>,
@@ -173,7 +176,18 @@ mod tests {
                 assert_eq!(version(connection), MIGRATIONS.len());
                 assert_eq!(
                     tables(connection),
-                    ["accounts", "invites", "secrets", "sessions"]
+                    [
+                        "access_tokens",
+                        "accounts",
+                        "app_redirects",
+                        "apps",
+                        "authorization_codes",
+                        "connections",
+                        "invites",
+                        "refresh_tokens",
+                        "secrets",
+                        "sessions",
+                    ]
                 );
                 connection
                     .execute_batch(
@@ -181,17 +195,57 @@ mod tests {
                              VALUES ('a', 'A', 'a', 'hash', 0);
                          INSERT INTO sessions VALUES ('f', 'a', 1);
                          INSERT INTO secrets VALUES ('a', 'k', x'00', x'00');
+                         INSERT INTO apps VALUES ('claude', 'Claude', 0);
+                         INSERT INTO app_redirects VALUES ('claude', 'https://claude.ai/cb');
+                         INSERT INTO authorization_codes
+                             VALUES ('c', 'a', 'claude', 'https://claude.ai/cb', 'x', 1);
+                         INSERT INTO connections VALUES ('n', 'a', 'claude', 0, 0);
+                         INSERT INTO access_tokens VALUES ('t', 'n', 1);
+                         INSERT INTO refresh_tokens VALUES ('r', 'n');
                          DELETE FROM accounts WHERE id = 'a';",
                     )
                     .map_err(sql)?;
                 let left: i64 = connection
                     .query_row(
-                        "SELECT (SELECT count(*) FROM sessions) + (SELECT count(*) FROM secrets)",
+                        "SELECT (SELECT count(*) FROM sessions) + (SELECT count(*) FROM secrets)
+                             + (SELECT count(*) FROM authorization_codes)
+                             + (SELECT count(*) FROM connections)
+                             + (SELECT count(*) FROM access_tokens)
+                             + (SELECT count(*) FROM refresh_tokens)",
                         [],
                         |row| row.get(0),
                     )
                     .map_err(sql)?;
                 assert_eq!(left, 0);
+                Ok(())
+            })
+            .expect("work");
+    }
+
+    #[test]
+    fn a_code_and_a_second_refresh_token_are_refused_where_they_do_not_belong() {
+        let connection = Connection::open_in_memory().expect("database");
+        let database = Database::prepare(connection, MIGRATIONS).expect("prepare");
+        database
+            .with(|connection| {
+                connection
+                    .execute_batch(
+                        "INSERT INTO accounts (id, name, name_key, password, created)
+                             VALUES ('a', 'A', 'a', 'hash', 0);
+                         INSERT INTO apps VALUES ('claude', 'Claude', 0);
+                         INSERT INTO app_redirects VALUES ('claude', 'https://claude.ai/cb');
+                         INSERT INTO connections VALUES ('n', 'a', 'claude', 0, 0);
+                         INSERT INTO refresh_tokens VALUES ('r', 'n');",
+                    )
+                    .map_err(sql)?;
+                let elsewhere = connection.execute(
+                    "INSERT INTO authorization_codes
+                         VALUES ('c', 'a', 'claude', 'https://attacker.example/cb', 'x', 1)",
+                    [],
+                );
+                assert!(elsewhere.is_err());
+                let second = connection.execute("INSERT INTO refresh_tokens VALUES ('s', 'n')", []);
+                assert!(second.is_err());
                 Ok(())
             })
             .expect("work");

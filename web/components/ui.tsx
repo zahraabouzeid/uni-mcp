@@ -7,17 +7,24 @@ import type {
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "secondary";
+  size?: "normal" | "large";
 };
 
-export function Button({ variant = "secondary", className = "", ...props }: ButtonProps) {
+export function Button({
+  variant = "secondary",
+  size = "normal",
+  className = "",
+  ...props
+}: ButtonProps) {
   const look =
     variant === "primary"
       ? "border-ink bg-ink text-canvas hover:opacity-85"
       : "border-line bg-canvas text-ink hover:bg-panel";
+  const height = size === "large" ? "h-11 w-full sm:h-9" : "h-8";
   return (
     <button
       type="button"
-      className={`h-8 shrink-0 whitespace-nowrap rounded-md border px-3 text-[13px] font-medium disabled:opacity-40 ${look} ${className}`}
+      className={`${height} shrink-0 whitespace-nowrap rounded-md border px-3 text-[13px] font-medium disabled:opacity-40 ${look} ${className}`}
       {...props}
     />
   );
@@ -76,14 +83,16 @@ export function Status({ ok, children }: { ok: boolean; children: ReactNode }) {
 
 export function Field({
   label,
+  fill = false,
   ...input
-}: { label: string } & InputHTMLAttributes<HTMLInputElement>) {
+}: { label: string; fill?: boolean } & InputHTMLAttributes<HTMLInputElement>) {
+  const size = fill ? "h-11 text-base sm:h-9 sm:text-sm" : "h-8";
   return (
-    <label className="grid w-60 gap-1">
+    <label className={`grid gap-1 ${fill ? "w-full" : "w-60"}`}>
       <span className="text-xs font-medium text-muted">{label}</span>
       <input
         spellCheck={false}
-        className="h-8 rounded-md border border-line bg-canvas px-2.5 text-ink outline-none focus:border-ink"
+        className={`${size} rounded-md border border-line bg-canvas px-2.5 text-ink outline-none focus:border-ink`}
         {...input}
       />
     </label>

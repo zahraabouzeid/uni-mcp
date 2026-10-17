@@ -11,7 +11,7 @@ vi.mock("@/lib/server-api", async (original) => ({
 }));
 
 const admin = { id: "a", name: "Zahraa", admin: true };
-const member = { id: "b", name: "Bestie", admin: false };
+const member = { id: "b", name: "Sam", admin: false };
 
 afterEach(() => {
   cleanup();
@@ -75,13 +75,13 @@ test("accepting an invite sends it with the chosen name and password", async () 
   const user = userEvent.setup();
   render(<Join invite="c0de" onDone={onDone} />);
 
-  await user.type(screen.getByLabelText("Username"), "Bestie");
+  await user.type(screen.getByLabelText("Username"), "Sam");
   await user.type(screen.getByLabelText("Password"), "correct horse battery");
   await user.click(screen.getByRole("button", { name: "Create account" }));
 
   expect(serverApi).toHaveBeenCalledWith("/account/accept", {
     invite: "c0de",
-    name: "Bestie",
+    name: "Sam",
     password: "correct horse battery",
   });
   expect(onDone).toHaveBeenCalledWith(session);

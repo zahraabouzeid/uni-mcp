@@ -317,11 +317,11 @@ fn random_bytes<const N: usize>() -> Result<[u8; N]> {
     Ok(bytes)
 }
 
-fn random_code() -> Result<String> {
+pub(crate) fn random_code() -> Result<String> {
     Ok(hex(&random_bytes::<32>()?))
 }
 
-fn fingerprint(code: &str) -> String {
+pub(crate) fn fingerprint(code: &str) -> String {
     hex(&Sha256::digest(code.as_bytes()))
 }
 
@@ -376,7 +376,7 @@ mod tests {
         let (accounts, folder) = accounts("admin");
         assert!(accounts.waits_for_its_admin(0).expect("waits"));
         let (first, _) = join(&accounts, "Zahraa");
-        let (second, _) = join(&accounts, "Bestie");
+        let (second, _) = join(&accounts, "Sam");
         assert!(first.admin && !second.admin);
         assert_eq!(accounts.people().expect("people"), [first, second]);
         drop(accounts);
@@ -421,7 +421,7 @@ mod tests {
         join(&accounts, "Zahraa");
         let invite = accounts.invite(0).expect("invite");
         assert!(accounts.accept(&invite, "zahraa", PASSWORD, 0).is_err());
-        assert!(accounts.accept(&invite, "Bestie", "short", 0).is_err());
+        assert!(accounts.accept(&invite, "Sam", "short", 0).is_err());
         for name in ["  ", "z", "zahraa bou zeid", "zähraa", "a@b"] {
             assert!(
                 accounts.accept(&invite, name, PASSWORD, 0).is_err(),
@@ -496,13 +496,13 @@ mod tests {
     fn removing_someone_logs_them_out_but_the_admin_stays() {
         let (accounts, folder) = accounts("remove");
         let (admin, _) = join(&accounts, "Zahraa");
-        let (other, session) = join(&accounts, "Bestie");
+        let (other, session) = join(&accounts, "Sam");
         assert!(accounts.remove(&admin.id).is_err());
         assert!(accounts.remove("nobody").is_err());
 
         accounts.remove(&other.id).expect("remove");
         assert!(accounts.person_of(&session, 0).is_none());
-        assert!(accounts.log_in("Bestie", PASSWORD, 0).is_err());
+        assert!(accounts.log_in("Sam", PASSWORD, 0).is_err());
         assert_eq!(accounts.people().expect("people"), [admin]);
         drop(accounts);
         fs::remove_dir_all(folder).expect("clean up");
@@ -526,7 +526,7 @@ mod tests {
 
         let reopened = Accounts::new(Database::open(&folder).expect("database"));
         assert_eq!(reopened.person_of(&session, 0), Some(person));
-        assert!(reopened.accept(&invite, "Bestie", PASSWORD, 0).is_ok());
+        assert!(reopened.accept(&invite, "Sam", PASSWORD, 0).is_ok());
         drop(reopened);
         fs::remove_dir_all(folder).expect("clean up");
     }

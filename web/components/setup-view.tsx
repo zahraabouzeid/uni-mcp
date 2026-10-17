@@ -82,24 +82,7 @@ export function SetupView({ command, apps, onChanged }: Props) {
 
   return (
     <>
-      <div role="tablist" className="mb-6 flex flex-wrap gap-x-5 gap-y-2 border-b border-line">
-        {APPS.map((a, index) => (
-          <button
-            key={a.name}
-            role="tab"
-            type="button"
-            aria-selected={index === selected}
-            onClick={() => setSelected(index)}
-            className={`-mb-px whitespace-nowrap border-b-2 pb-2 font-medium ${
-              index === selected
-                ? "border-ink text-ink"
-                : "border-transparent text-muted hover:text-ink"
-            }`}
-          >
-            {a.name}
-          </button>
-        ))}
-      </div>
+      <Tabs names={APPS.map((a) => a.name)} selected={selected} onSelect={setSelected} />
 
       {target && <AddTo key={target.id} name={app.name} target={target} onChanged={onChanged} />}
 
@@ -150,7 +133,35 @@ function AddTo(props: { name: string; target: AppTarget; onChanged: () => void }
   );
 }
 
-function Snippet({ step, code }: { step: Step; code: string }) {
+export function Tabs(props: {
+  names: string[];
+  selected: number;
+  onSelect: (index: number) => void;
+}) {
+  const { names, selected, onSelect } = props;
+  return (
+    <div role="tablist" className="mb-6 flex flex-wrap gap-x-5 gap-y-2 border-b border-line">
+      {names.map((name, index) => (
+        <button
+          key={name}
+          role="tab"
+          type="button"
+          aria-selected={index === selected}
+          onClick={() => onSelect(index)}
+          className={`-mb-px whitespace-nowrap border-b-2 pb-2 font-medium ${
+            index === selected
+              ? "border-ink text-ink"
+              : "border-transparent text-muted hover:text-ink"
+          }`}
+        >
+          {name}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function Snippet({ step, code }: { step: Pick<Step, "title" | "hint">; code: string }) {
   const [copied, setCopied] = useState(false);
 
   async function copy() {

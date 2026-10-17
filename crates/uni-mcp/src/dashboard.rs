@@ -793,7 +793,7 @@ mod tests {
                 .expect("account")
                 .1
         };
-        let (admin, mine, hers) = (join("Admin"), join("Zahraa"), join("Bestie"));
+        let (admin, mine, hers) = (join("Admin"), join("Zahraa"), join("Sam"));
         let api = hosted_api(Arc::new(accounts), Arc::new(vault), database);
 
         let call = |session: Option<&str>, method: &str, path: &str, body: Value| {
