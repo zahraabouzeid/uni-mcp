@@ -2,6 +2,9 @@
 set -eu
 cd "$(dirname "$0")"
 service=${1:?usage: update.sh app|app-dev}
+if [ "$service" = app-dev ]; then
+	export COMPOSE_PROFILES=dev
+fi
 
 container=$(docker compose ps --all --quiet "$service")
 docker compose pull --quiet "$service" caddy

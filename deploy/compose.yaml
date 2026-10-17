@@ -24,6 +24,8 @@ services:
   app-dev:
     <<: *unimcp
     image: ghcr.io/zahraabouzeid/unimcp:edge
+    profiles:
+      - dev
     environment:
       UNIMCP_PUBLIC_URL: https://dev.${DOMAIN:?set DOMAIN in .env}
       UNIMCP_ADMIN_URL: https://admin.dev.${DOMAIN:?set DOMAIN in .env}
