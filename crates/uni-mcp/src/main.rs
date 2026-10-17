@@ -66,6 +66,9 @@ enum Command {
         /// The address members reach the server at, e.g. `https://uni.example.org`.
         #[arg(long, env = "UNIMCP_PUBLIC_URL")]
         public_url: Option<String>,
+        /// The address of the admin pages from outside, if they are reachable there.
+        #[arg(long, env = "UNIMCP_ADMIN_URL")]
+        admin_url: Option<String>,
         /// Folder for the accounts of the server. Defaults to one in your user folder.
         #[arg(long)]
         data: Option<PathBuf>,
@@ -133,6 +136,7 @@ async fn run(cli: Cli) -> Result<(), String> {
         port,
         admin_port,
         public_url,
+        admin_url,
         data,
         autostart,
     } = command
@@ -142,6 +146,7 @@ async fn run(cli: Cli) -> Result<(), String> {
             port,
             admin_port,
             public_url: public_url.map(|url| url.trim_end_matches('/').to_owned()),
+            admin_url: admin_url.map(|url| url.trim_end_matches('/').to_owned()),
         };
         return run_server(cli.profile, secrets, listen, data, autostart).await;
     }
@@ -213,7 +218,8 @@ async fn run_server(
             if accounts.waits_for_its_admin(now).map_err(text)? {
                 let invite = accounts.invite(now).map_err(text)?;
                 println!("Create an admin account:");
-                println!("{}", server::admin_link(listen.admin_port, &invite));
+                let address = listen.admin_address(listen.admin_port);
+                println!("{}", server::admin_link(&address, &invite));
             }
             let launch = autostart::Launch::of_this_server(listen.port, listen.admin_port, &folder)
                 .map_err(text)?;

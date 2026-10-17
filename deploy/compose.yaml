@@ -17,6 +17,7 @@ services:
     image: ghcr.io/zahraabouzeid/unimcp:latest
     environment:
       UNIMCP_PUBLIC_URL: https://${DOMAIN:?set DOMAIN in .env}
+      UNIMCP_ADMIN_URL: https://${DOMAIN:?set DOMAIN in .env}:8443
     volumes:
       - data:/data
 
@@ -25,6 +26,7 @@ services:
     image: ghcr.io/zahraabouzeid/unimcp:edge
     environment:
       UNIMCP_PUBLIC_URL: https://${DOMAIN:?set DOMAIN in .env}:9444
+      UNIMCP_ADMIN_URL: https://${DOMAIN:?set DOMAIN in .env}:9443
     volumes:
       - data_dev:/data
 

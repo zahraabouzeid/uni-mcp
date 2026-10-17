@@ -344,17 +344,26 @@ pub async fn serve(
     Ok(())
 }
 
-/// Where the server listens. Members use `port`; the admin pages are only
-/// on `admin_port`, which is meant to stay on the machine itself.
+/// Where the server listens. Members use `port`, the admin pages `admin_port`.
+/// The URLs say where each is reached from outside, e.g. through a proxy.
 pub struct Listen {
     pub bind: IpAddr,
     pub port: u16,
     pub admin_port: u16,
     pub public_url: Option<String>,
+    pub admin_url: Option<String>,
 }
 
-pub fn admin_link(admin_port: u16, invite: &str) -> String {
-    format!("http://127.0.0.1:{admin_port}{SERVER_PAGE}?invite={invite}")
+impl Listen {
+    pub fn admin_address(&self, admin_port: u16) -> String {
+        self.admin_url
+            .clone()
+            .unwrap_or_else(|| format!("http://127.0.0.1:{admin_port}"))
+    }
+}
+
+pub fn admin_link(admin_address: &str, invite: &str) -> String {
+    format!("{admin_address}{SERVER_PAGE}?invite={invite}")
 }
 
 /// Without `connectors` there is no university chosen on this computer, and
@@ -384,7 +393,8 @@ where
         .clone()
         .unwrap_or_else(|| format!("http://127.0.0.1:{member_port}"));
     println!("Dashboard: {public}{SERVER_PAGE}");
-    println!("Admin, on this machine only: http://127.0.0.1:{admin_port}{SERVER_PAGE}");
+    let admin_address = listen.admin_address(admin_port);
+    println!("Admin: {admin_address}{SERVER_PAGE}");
     if connectors.is_some() {
         println!("MCP server: {public}{HTTP_PATH}");
     }
@@ -395,7 +405,7 @@ where
     {
         let invite = accounts.invite(accounts::now()).map_err(text)?;
         println!("Create an admin account:");
-        println!("{}", admin_link(admin_port, &invite));
+        println!("{}", admin_link(&admin_address, &invite));
     }
     println!("Press Ctrl+C to stop.");
 
