@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use axum::extract::{Request, State};
+use axum::extract::{Extension, Request, State};
 use axum::http::{StatusCode, Uri, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -24,11 +24,14 @@ use uni_core::Error;
 use uni_core::profile::Profile;
 use uni_core::secrets::SecretStore;
 
+use crate::accounts::Accounts;
 use crate::apps::{self, App as McpClient};
 use crate::connectors::{Connectors, ServiceKind, ServiceState, WebdavLogin};
 use crate::login::{self, Progress};
 use crate::server::Needs;
-use crate::{config, launch, scheme, server};
+use crate::store::Database;
+use crate::vault::Vault;
+use crate::{config, hosting, launch, scheme, server};
 
 static PAGE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../web/out");
 const KEY_HEADER: &str = "x-unimcp-key";
@@ -52,9 +55,14 @@ pub enum Mode {
     Dev,
 }
 
+/// What one person's dashboard works on: their settings and their logins.
 #[derive(Clone)]
 struct App {
     secrets: Arc<dyn SecretStore>,
+    settings: Arc<config::Settings>,
+    /// On a home server, where the page belongs to an account and the program
+    /// is not on the computer of the person looking at it.
+    hosted: bool,
     key: Arc<str>,
     started: Instant,
     /// Seconds after `started` of the latest request; zero until the first.
@@ -141,7 +149,9 @@ impl App {
 
 impl App {
     fn connectors(&self) -> Result<Connectors, ApiError> {
-        let id = config::load()?
+        let id = self
+            .settings
+            .load()?
             .profile
             .ok_or_else(|| ApiError("choose a university first".into()))?;
         Ok(Connectors::new(
@@ -212,6 +222,8 @@ pub async fn run(secrets: Arc<dyn SecretStore>, mode: Mode) -> Result<(), String
         .map_or_else(random_key, Ok)?;
     let app = App {
         secrets,
+        settings: Arc::new(config::Settings::of_this_user().map_err(text)?),
+        hosted: false,
         key: key.into(),
         started: Instant::now(),
         last_seen: Arc::new(AtomicU64::new(0)),
@@ -256,26 +268,96 @@ pub async fn run(secrets: Arc<dyn SecretStore>, mode: Mode) -> Result<(), String
     }
 }
 
-fn router(app: App) -> Router {
-    let api = Router::new()
+/// The API of a dashboard. A layer in front of it has to say whose it is, by
+/// putting their [`App`] on the request.
+fn api() -> Router {
+    Router::new()
         .route("/state", get(state))
         .route("/university", post(choose_university))
         .route("/custom-instructions", post(save_custom_instructions))
         .route("/login/moodle", post(start_moodle).get(moodle_progress))
+        .route("/login/moodle/link", post(finish_moodle))
         .route("/login/webdav", post(login_webdav))
         .route("/login/calendar", post(login_calendar))
         .route("/logout", post(logout))
         .route("/tools/try", post(try_tool))
         .route("/apps/add", post(add_to_app))
-        .layer(middleware::from_fn_with_state(app.clone(), require_key));
-    Router::new()
-        .nest("/api", api)
-        .route("/api/closing", post(closing))
-        .fallback(page)
-        .with_state(app)
 }
 
-async fn require_key(State(app): State<App>, request: Request, next: Next) -> Response {
+#[derive(Clone)]
+struct Hosted {
+    accounts: Arc<Accounts>,
+    vault: Arc<Vault>,
+    database: Arc<Database>,
+    checks: Arc<Mutex<HashMap<String, Arc<Mutex<Checks>>>>>,
+}
+
+impl Hosted {
+    fn app_of(&self, account: &str) -> App {
+        let checks = self
+            .checks
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .entry(account.to_owned())
+            .or_default()
+            .clone();
+        let settings = config::Settings::Account {
+            database: self.database.clone(),
+            account: account.to_owned(),
+        };
+        App {
+            secrets: Arc::new(self.vault.secrets_of(account)),
+            settings: Arc::new(settings),
+            hosted: true,
+            key: "".into(),
+            started: Instant::now(),
+            last_seen: Arc::default(),
+            closing: Arc::default(),
+            checks,
+        }
+    }
+}
+
+pub fn hosted_api(accounts: Arc<Accounts>, vault: Arc<Vault>, database: Arc<Database>) -> Router {
+    let hosted = Hosted {
+        accounts,
+        vault,
+        database,
+        checks: Arc::default(),
+    };
+    api().layer(middleware::from_fn_with_state(hosted, require_account))
+}
+
+async fn require_account(
+    State(hosted): State<Hosted>,
+    mut request: Request,
+    next: Next,
+) -> Response {
+    let Some(person) = hosting::person_in(&hosted.accounts, request.headers()) else {
+        let refusal = Json(json!({ "error": "log in first" }));
+        return (StatusCode::UNAUTHORIZED, refusal).into_response();
+    };
+    // The admin looks after the server and keeps no university logins on it.
+    if person.admin {
+        let refusal = Json(json!({ "error": "the admin account has no university dashboard" }));
+        return (StatusCode::FORBIDDEN, refusal).into_response();
+    }
+    request.extensions_mut().insert(hosted.app_of(&person.id));
+    next.run(request).await
+}
+
+fn router(app: App) -> Router {
+    let api = api().layer(middleware::from_fn_with_state(app.clone(), require_key));
+    let goodbye = Router::new()
+        .route("/api/closing", post(closing))
+        .with_state(app);
+    Router::new()
+        .nest("/api", api)
+        .merge(goodbye)
+        .fallback(page)
+}
+
+async fn require_key(State(app): State<App>, mut request: Request, next: Next) -> Response {
     let sent = request
         .headers()
         .get(KEY_HEADER)
@@ -285,6 +367,7 @@ async fn require_key(State(app): State<App>, request: Request, next: Next) -> Re
     }
     app.seen_now();
     app.closing.store(false, Ordering::Relaxed);
+    request.extensions_mut().insert(app);
     next.run(request).await
 }
 
@@ -317,10 +400,16 @@ async fn page_closed(app: &App) {
     }
 }
 
-async fn page(uri: Uri) -> Response {
-    let path = match uri.path().trim_start_matches('/') {
+/// A page is exported as `<name>.html` and opened without the ending.
+pub(crate) async fn page(uri: Uri) -> Response {
+    let path = match uri.path().trim_matches('/') {
         "" => "index.html",
         path => path,
+    };
+    let as_page = format!("{path}.html");
+    let path = match PAGE.get_file(path) {
+        None if PAGE.get_file(&as_page).is_some() => as_page.as_str(),
+        _ => path,
     };
     match PAGE.get_file(path) {
         Some(file) => {
@@ -331,11 +420,11 @@ async fn page(uri: Uri) -> Response {
     }
 }
 
-async fn state(State(app): State<App>) -> ApiResult {
+async fn state(Extension(app): Extension<App>) -> ApiResult {
     let config::Config {
         profile: selected,
         custom_instructions,
-    } = config::load()?;
+    } = app.settings.load()?;
     let (services, canteens) = match &selected {
         Some(_) => {
             let connectors = app.connectors()?;
@@ -358,7 +447,8 @@ async fn state(State(app): State<App>) -> ApiResult {
         matches!(service.logged_in, Ok(true)) && *check != Check::Rejected
     };
 
-    let command = launch::command();
+    // On a server the program is not where the person's AI apps are.
+    let command = launch::command().filter(|_| !app.hosted);
     let universities: Vec<Value> = Profile::builtin_all()?
         .into_iter()
         .map(|p| json!({ "id": p.id, "name": p.name, "color": p.color }))
@@ -412,7 +502,8 @@ async fn state(State(app): State<App>) -> ApiResult {
         "command": command,
         "version": env!("CARGO_PKG_VERSION"),
         "repository": env!("CARGO_PKG_REPOSITORY"),
-        "browser_sign_in": scheme::SUPPORTED,
+        "browser_sign_in": scheme::SUPPORTED && !app.hosted,
+        "hosted": app.hosted,
     })))
 }
 
@@ -421,12 +512,16 @@ struct UniversityChoice {
     id: String,
 }
 
-async fn choose_university(Json(choice): Json<UniversityChoice>) -> ApiResult {
+async fn choose_university(
+    Extension(app): Extension<App>,
+    Json(choice): Json<UniversityChoice>,
+) -> ApiResult {
     let profile = Profile::builtin(&choice.id)?;
-    config::save(&config::Config {
+    app.settings.save(&config::Config {
         profile: Some(profile.id),
-        ..config::load()?
+        ..app.settings.load()?
     })?;
+    app.checks().forget();
     Ok(done())
 }
 
@@ -435,22 +530,41 @@ struct CustomInstructions {
     custom_instructions: String,
 }
 
-async fn save_custom_instructions(Json(body): Json<CustomInstructions>) -> ApiResult {
-    config::save(&config::Config {
+async fn save_custom_instructions(
+    Extension(app): Extension<App>,
+    Json(body): Json<CustomInstructions>,
+) -> ApiResult {
+    app.settings.save(&config::Config {
         custom_instructions: config::custom_instructions(&body.custom_instructions)?,
-        ..config::load()?
+        ..app.settings.load()?
     })?;
     Ok(done())
 }
 
-async fn start_moodle(State(app): State<App>) -> ApiResult {
+async fn start_moodle(Extension(app): Extension<App>) -> ApiResult {
     app.checks().forget();
+    if app.hosted {
+        // The browser to open is the one showing the page, not one on the server.
+        let url = login::begin_moodle_on_page(&app.connectors()?)?;
+        return Ok(Json(json!({ "url": url, "opened": false })));
+    }
     let url = login::begin_moodle(&app.connectors()?)?;
     let opened = open::that(&url).is_ok();
     Ok(Json(json!({ "url": url, "opened": opened })))
 }
 
-async fn moodle_progress(State(app): State<App>) -> ApiResult {
+#[derive(Deserialize)]
+struct MoodleLink {
+    link: String,
+}
+
+async fn finish_moodle(Extension(app): Extension<App>, Json(body): Json<MoodleLink>) -> ApiResult {
+    login::finish_moodle_on_page(&app.connectors()?, &body.link)?;
+    app.checks().forget();
+    Ok(done())
+}
+
+async fn moodle_progress(Extension(app): Extension<App>) -> ApiResult {
     let (state, message) = match login::moodle_progress(&app.connectors()?)? {
         Progress::Waiting => ("waiting", None),
         Progress::Done => {
@@ -462,7 +576,7 @@ async fn moodle_progress(State(app): State<App>) -> ApiResult {
     Ok(Json(json!({ "state": state, "message": message })))
 }
 
-async fn login_webdav(State(app): State<App>, Json(login): Json<WebdavLogin>) -> ApiResult {
+async fn login_webdav(Extension(app): Extension<App>, Json(login): Json<WebdavLogin>) -> ApiResult {
     let login = WebdavLogin {
         user: login.user.trim().to_owned(),
         password: login.password.trim().to_owned(),
@@ -477,7 +591,10 @@ struct CalendarLink {
     link: String,
 }
 
-async fn login_calendar(State(app): State<App>, Json(body): Json<CalendarLink>) -> ApiResult {
+async fn login_calendar(
+    Extension(app): Extension<App>,
+    Json(body): Json<CalendarLink>,
+) -> ApiResult {
     login::store_calendar(&app.connectors()?, &body.link).await?;
     app.checks().forget();
     Ok(done())
@@ -488,7 +605,7 @@ struct ServiceChoice {
     service: String,
 }
 
-async fn logout(State(app): State<App>, Json(choice): Json<ServiceChoice>) -> ApiResult {
+async fn logout(Extension(app): Extension<App>, Json(choice): Json<ServiceChoice>) -> ApiResult {
     login::logout(&app.connectors()?, &choice.service)?;
     app.checks().forget();
     Ok(done())
@@ -499,7 +616,10 @@ struct AppChoice {
     app: McpClient,
 }
 
-async fn add_to_app(Json(choice): Json<AppChoice>) -> ApiResult {
+async fn add_to_app(Extension(app): Extension<App>, Json(choice): Json<AppChoice>) -> ApiResult {
+    if app.hosted {
+        return Err(ApiError("AI apps are not on the server".into()));
+    }
     let command = launch::command()
         .ok_or_else(|| ApiError("cannot tell where uniMCP is installed".into()))?;
     // Starting another program can take a moment.
@@ -516,7 +636,7 @@ struct ToolCall {
 }
 
 /// A failing tool is a result to show, not an API error.
-async fn try_tool(State(app): State<App>, Json(call): Json<ToolCall>) -> ApiResult {
+async fn try_tool(Extension(app): Extension<App>, Json(call): Json<ToolCall>) -> ApiResult {
     let result = server::try_tool(app.connectors()?, &call.name, call.arguments.into()).await;
     Ok(Json(match result {
         Ok(output) => {
@@ -559,8 +679,11 @@ mod tests {
     const KEY: &str = "0123456789abcdef";
 
     fn app() -> App {
+        let settings = std::env::temp_dir().join("unimcp-dashboard-test-settings.toml");
         App {
             secrets: Arc::new(MemoryStore::default()),
+            settings: Arc::new(config::Settings::File(settings)),
+            hosted: false,
             key: KEY.into(),
             started: Instant::now(),
             last_seen: Arc::new(AtomicU64::new(0)),
@@ -655,8 +778,76 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn each_account_has_a_dashboard_of_its_own() {
+        use crate::accounts::testing::PASSWORD;
+
+        let (database, folder) = crate::store::testing::database("dashboards");
+        let accounts = Accounts::new(database.clone());
+        let vault = Vault::open(&folder, database.clone()).expect("vault");
+        // Sessions are checked against the real time here.
+        let join = |name: &str| {
+            let now = crate::accounts::now();
+            let invite = accounts.invite(now).expect("invite");
+            accounts
+                .accept(&invite, name, PASSWORD, now)
+                .expect("account")
+                .1
+        };
+        let (admin, mine, hers) = (join("Admin"), join("Zahraa"), join("Bestie"));
+        let api = hosted_api(Arc::new(accounts), Arc::new(vault), database);
+
+        let call = |session: Option<&str>, method: &str, path: &str, body: Value| {
+            let mut request = Request::builder()
+                .method(method)
+                .uri(path)
+                .header("content-type", "application/json");
+            if let Some(session) = session {
+                request = request.header("cookie", format!("unimcp_session={session}"));
+            }
+            let request = request.body(Body::from(body.to_string())).expect("request");
+            let api = api.clone();
+            async move {
+                let response = api.oneshot(request).await.expect("response");
+                let status = response.status();
+                let bytes = axum::body::to_bytes(response.into_body(), 1 << 22)
+                    .await
+                    .expect("body");
+                let body: Value = serde_json::from_slice(&bytes).unwrap_or_default();
+                (status, body)
+            }
+        };
+
+        let (status, _) = call(None, "GET", "/state", json!({})).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        let (status, _) = call(Some(&admin), "GET", "/state", json!({})).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let login = json!({ "user": "ab123456", "password": "app password" });
+        let (status, _) = call(Some(&admin), "POST", "/login/webdav", login).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+
+        let note = json!({ "custom_instructions": "Only for me." });
+        let (status, _) = call(Some(&mine), "POST", "/custom-instructions", note).await;
+        assert_eq!(status, StatusCode::OK);
+
+        let (_, my_state) = call(Some(&mine), "GET", "/state", json!({})).await;
+        let (_, her_state) = call(Some(&hers), "GET", "/state", json!({})).await;
+        assert_eq!(my_state["custom_instructions"], "Only for me.");
+        assert_eq!(her_state["custom_instructions"], "");
+        assert_eq!(my_state["hosted"], true);
+        assert!(my_state["command"].is_null());
+
+        let add = json!({ "app": "codex" });
+        let (status, _) = call(Some(&mine), "POST", "/apps/add", add).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+
+        drop(api);
+        std::fs::remove_dir_all(folder).expect("clean up");
+    }
+
+    #[tokio::test]
     async fn the_page_is_served_without_a_key() {
         assert_eq!(status_of("/", None).await, StatusCode::OK);
+        assert_eq!(status_of("/server", None).await, StatusCode::OK);
         assert_eq!(
             status_of("/no-such-file.js", None).await,
             StatusCode::NOT_FOUND

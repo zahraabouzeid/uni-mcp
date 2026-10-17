@@ -19,7 +19,7 @@ const service: Service = {
   error: null,
 };
 
-function show(overrides: Partial<Service> = {}, browserSignIn = true) {
+function show(overrides: Partial<Service> = {}, browserSignIn = true, hosted = false) {
   const onChanged = vi.fn();
   render(
     <table>
@@ -27,6 +27,7 @@ function show(overrides: Partial<Service> = {}, browserSignIn = true) {
         <ServiceRow
           service={{ ...service, ...overrides }}
           browserSignIn={browserSignIn}
+          hosted={hosted}
           onChanged={onChanged}
         />
       </tbody>
@@ -121,4 +122,24 @@ test("Moodle points to the terminal where it is not", async () => {
 
   expect(api).not.toHaveBeenCalled();
   expect(screen.getByRole("alert").textContent).toContain("unimcp login moodle");
+});
+
+test("on a home server Moodle signs in in a new tab and takes the pasted link", async () => {
+  const tab = { location: { href: "" }, close: vi.fn() };
+  vi.spyOn(window, "open").mockReturnValue(tab as unknown as Window);
+  vi.mocked(api).mockImplementation(async (path) =>
+    path === "/login/moodle"
+      ? { url: "https://moodle.example/launch", opened: false }
+      : { ok: true },
+  );
+  const { user, onChanged } = show({ id: "moodle", name: "Moodle", kind: "moodle" }, false, true);
+
+  await user.click(screen.getByRole("button", { name: "Connect" }));
+  expect(tab.location.href).toBe("https://moodle.example/launch");
+
+  await user.type(await screen.findByLabelText("Link from Moodle"), "web+unimcp://token=abc");
+  await user.click(screen.getByRole("button", { name: "Connect" }));
+
+  expect(api).toHaveBeenCalledWith("/login/moodle/link", { link: "web+unimcp://token=abc" });
+  expect(onChanged).toHaveBeenCalled();
 });

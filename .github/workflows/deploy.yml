@@ -1,0 +1,36 @@
+name: Deploy
+
+on:
+  workflow_call:
+    inputs:
+      service:
+        type: string
+        required: true
+
+jobs:
+  server:
+    name: Server
+    if: vars.SSH_TARGET != ''
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy
+      cancel-in-progress: false
+    env:
+      TARGET: ${{ vars.SSH_TARGET }}
+      FOLDER: ${{ vars.DEPLOY_FOLDER }}
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - env:
+          DOMAIN: ${{ vars.DOMAIN }}
+        run: printf 'DOMAIN=%s\n' "$DOMAIN" > deploy/.env
+      - run: ssh "$TARGET" "mkdir -p $FOLDER"
+      - run: scp deploy/.env deploy/compose.yaml deploy/Caddyfile deploy/update.sh "$TARGET:$FOLDER/"
+      - run: ssh "$TARGET" "sh $FOLDER/update.sh ${{ inputs.service }}"

@@ -55,3 +55,47 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
+
+  image:
+    name: Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      PUSH: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    outputs:
+      deploy: ${{ steps.deploy.outputs.wanted }}
+    steps:
+      - id: deploy
+        if: env.PUSH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          message=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA" --jq .commit.message)
+          case "$message" in *"[ci deploy]"*) echo "wanted=true" >> "$GITHUB_OUTPUT" ;; esac
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        if: env.PUSH == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ env.PUSH == 'true' }}
+          tags: ghcr.io/${{ github.repository_owner }}/unimcp:edge
+          cache-from: type=gha,scope=amd64
+          cache-to: type=gha,mode=max,scope=amd64
+
+  deploy:
+    name: Deploy
+    needs: image
+    if: needs.image.outputs.deploy == 'true'
+    uses: ./.github/workflows/deploy.yml
+    with:
+      service: app-dev
+    secrets: inherit

@@ -11,8 +11,10 @@ name = "unimcp"
 path = "src/main.rs"
 
 [dependencies]
+argon2 = "0.5"
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio"] }
 base64.workspace = true
+chacha20poly1305 = "0.10"
 clap = { version = "4", features = ["derive", "env"] }
 dirs = "6"
 getrandom = "0.4"
@@ -20,11 +22,13 @@ include_dir.workspace = true
 mime_guess = "2"
 open = "5"
 reqwest.workspace = true
-rmcp = { version = "3", features = ["server", "macros", "transport-io"] }
+rmcp = { version = "3", features = ["server", "macros", "transport-io", "transport-streamable-http-server"] }
 rpassword = "7"
+rusqlite = { version = "0.37", features = ["bundled"] }
 schemars = "1"
 serde.workspace = true
 serde_json.workspace = true
+sha2 = "0.10"
 sysinfo = { version = "0.37", default-features = false, features = ["system"] }
 tokio = { workspace = true, features = ["net", "signal", "time"] }
 toml.workspace = true

@@ -1,0 +1,55 @@
+x-unimcp: &unimcp
+  restart: unless-stopped
+  expose:
+    - "8787"
+    - "8788"
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  app:
+    <<: *unimcp
+    image: ghcr.io/zahraabouzeid/unimcp:latest
+    environment:
+      UNIMCP_PUBLIC_URL: https://${DOMAIN:?set DOMAIN in .env}
+      UNIMCP_ADMIN_URL: https://${DOMAIN:?set DOMAIN in .env}:8443
+    volumes:
+      - data:/data
+
+  app-dev:
+    <<: *unimcp
+    image: ghcr.io/zahraabouzeid/unimcp:edge
+    environment:
+      UNIMCP_PUBLIC_URL: https://${DOMAIN:?set DOMAIN in .env}:9444
+      UNIMCP_ADMIN_URL: https://${DOMAIN:?set DOMAIN in .env}:9443
+    volumes:
+      - data_dev:/data
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+      - "8443:8443"
+      - "8444:8444"
+      - "9443:9443"
+      - "9444:9444"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  data:
+  data_dev:
+  caddy_data:
+  caddy_config:

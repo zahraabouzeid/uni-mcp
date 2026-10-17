@@ -1,0 +1,10 @@
+.git
+target
+deploy
+web/node_modules
+web/.next
+web/out
+web/tsconfig.tsbuildinfo
+.env
+*.local.md
+*.local.json
