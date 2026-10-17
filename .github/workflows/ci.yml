@@ -64,7 +64,17 @@ jobs:
       packages: write
     env:
       PUSH: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    outputs:
+      deploy: ${{ steps.deploy.outputs.wanted }}
     steps:
+      - id: deploy
+        if: env.PUSH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          message=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA" --jq .commit.message)
+          case "$message" in *"[ci deploy]"*) echo "wanted=true" >> "$GITHUB_OUTPUT" ;; esac
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
@@ -84,7 +94,7 @@ jobs:
   deploy:
     name: Deploy
     needs: image
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: needs.image.outputs.deploy == 'true'
     uses: ./.github/workflows/deploy.yml
     with:
       service: app-dev
