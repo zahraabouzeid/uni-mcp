@@ -10,7 +10,7 @@ vi.mock("@/lib/server-api", async (original) => ({
 }));
 
 const about = { version: "1.0.0", repository: "https://example.org", public_url: null };
-const member = { person: { id: "b", name: "Bestie", admin: false }, about };
+const member = { person: { id: "b", name: "Sam", admin: false }, about };
 const admin = { person: { id: "a", name: "Zahraa", admin: true }, about };
 
 const request = readRequest(
@@ -70,7 +70,7 @@ test("a member sees who asks and what it may read, and allowing sends them back"
   render(<Consent request={request} />);
 
   expect(await screen.findByText("Connect Claude")).toBeTruthy();
-  expect(screen.getByText("Bestie")).toBeTruthy();
+  expect(screen.getByText("Sam")).toBeTruthy();
   expect(screen.getByText("Your timetable")).toBeTruthy();
 
   await user.click(screen.getByRole("button", { name: "Allow" }));

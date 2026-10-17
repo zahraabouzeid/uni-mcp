@@ -597,7 +597,7 @@ mod tests {
     fn server(name: &str) -> Server {
         let (accounts, folder) = accounts(name);
         join(&accounts, "Zahraa");
-        let (member, _) = join(&accounts, "Bestie");
+        let (member, _) = join(&accounts, "Sam");
         let database = crate::store::Database::open(&folder).expect("database");
         Server {
             oauth: OAuth::new(database),
@@ -867,7 +867,7 @@ mod tests {
             };
             let (admin, admin_session) = join_now("Zahraa");
             assert!(admin.admin);
-            let (_, member_session) = join_now("Bestie");
+            let (_, member_session) = join_now("Sam");
             let database = crate::store::Database::open(&folder).expect("database");
             let oauth = Arc::new(OAuth::new(database));
             let accounts = Arc::new(accounts);

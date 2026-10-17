@@ -335,7 +335,7 @@ mod tests {
             .expect("admin");
         let second = accounts.invite(now).expect("invite");
         let (member, member_session) = accounts
-            .accept(&second, "Bestie", PASSWORD, now)
+            .accept(&second, "Sam", PASSWORD, now)
             .expect("member");
         (Arc::new(accounts), admin, member, member_session, folder)
     }
@@ -450,7 +450,7 @@ mod tests {
             assert_eq!(status, StatusCode::NOT_FOUND, "{path}");
         }
 
-        let login = json!({ "name": "Bestie", "password": PASSWORD });
+        let login = json!({ "name": "Sam", "password": PASSWORD });
         let (status, cookie, _) = call(
             &accounts,
             On::Members,

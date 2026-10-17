@@ -163,7 +163,7 @@ mod tests {
             database: database.clone(),
             account: join(&accounts, name).0.id,
         };
-        let (mine, hers) = (of("Zahraa"), of("Bestie"));
+        let (mine, hers) = (of("Zahraa"), of("Sam"));
 
         mine.save(&Config {
             profile: Some("x".into()),

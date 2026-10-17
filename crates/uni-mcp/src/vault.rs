@@ -173,7 +173,7 @@ pub mod testing {
     pub fn vault(name: &str) -> (Vault, Arc<Database>, [String; 2], PathBuf) {
         let (database, folder) = crate::store::testing::database(name);
         let accounts = Accounts::new(database.clone());
-        let ids = ["Zahraa", "Bestie"].map(|name| join(&accounts, name).0.id);
+        let ids = ["Zahraa", "Sam"].map(|name| join(&accounts, name).0.id);
         let vault = Vault::open(&folder, database.clone()).expect("vault");
         (vault, database, ids, folder)
     }

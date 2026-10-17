@@ -846,7 +846,7 @@ mod tests {
         let (database, folder) = crate::store::testing::database("mcp-over-http");
         let accounts = Arc::new(Accounts::new(database.clone()));
         crate::accounts::testing::join(&accounts, "Zahraa");
-        let (member, _) = crate::accounts::testing::join(&accounts, "Bestie");
+        let (member, _) = crate::accounts::testing::join(&accounts, "Sam");
         let settings = config::Settings::Account {
             database: database.clone(),
             account: member.id.clone(),
