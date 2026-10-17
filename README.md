@@ -22,17 +22,13 @@ Unofficial, and not affiliated with any university.
 
 ### Supported file formats
 
-- **PDF**: extracted text, or individual pages rendered as images, which
-  preserves diagrams, formulas and scanned pages.
-- **Word, PowerPoint, Excel** (`.docx`, `.pptx`, `.xlsx`): text per slide and
-  per sheet, plus the images embedded in Word and PowerPoint files.
-- **Images** (PNG, JPEG, GIF, WebP): passed through unchanged.
-- **Zip archives**: a listing of the contents, and any supported file inside.
-- **Plain text**, such as source code, Markdown or CSV.
-
-Not supported yet: password-protected PDFs, legacy Office formats (`.doc`,
-`.ppt`, `.xls`), vector drawings and charts embedded in Office files, and
-other archive formats.
+| Format                  | Read as                                         |
+| ----------------------- | ----------------------------------------------- |
+| PDF                     | Text, or pages as images for formulas and scans |
+| Word, PowerPoint, Excel | Text and embedded images                        |
+| Images                  | The image itself                                |
+| Zip archives            | The file list and the files inside              |
+| Plain text              | Text, such as code, Markdown or CSV             |
 
 ## Prompts
 
@@ -48,17 +44,14 @@ Prompt templates, available in clients that support MCP prompts:
 
 ## Security and privacy
 
-- **Read-only.** No tool can modify, send, submit or delete anything.
-- **Yours.** uniMCP runs on your computer or your own server and fetches your
-  data directly from the university.
-- **No university password.** Moodle uses the university's own sign-in page,
-  cloud storage an app password, and the calendar a link you publish yourself.
-  The canteen menu is public and requires no login.
-- **Credentials stay in your system keyring**, or encrypted on your server,
-  and are never exposed to the AI assistant.
-- **AI assistants connect only with your permission.** On a server, an AI
-  assistant gets access only after you log in and allow it, and only to your
-  own account.
+- **Read-only:** no tool can change, send or delete anything.
+- **Self-hosted:** runs on a computer or server you control.
+- **No university password:** Moodle uses the university's sign-in page, cloud
+  storage an app password, the calendar a published link.
+- **Encrypted credentials:** kept in the system keyring or encrypted on the
+  server, never shown to the AI assistant.
+- **Explicit consent:** on a server, an AI assistant only gets access after the
+  user allows it.
 
 ## Supported universities
 
@@ -67,30 +60,17 @@ Prompt templates, available in clients that support MCP prompts:
 | RWTH Aachen University | Moodle  | Sciebo        | RWTHonline | OpenMensa |
 
 Each university is defined by a single file in [`profiles`](profiles). To add
-yours, see [CONTRIBUTING.md](CONTRIBUTING.md).
+another one, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Getting started
 
 Download uniMCP from the
-[releases page](https://github.com/zahraabouzeid/uni-mcp/releases):
+[releases page](https://github.com/zahraabouzeid/uni-mcp/releases): the
+`.msi` installer on Windows, or the single `unimcp` file on any platform.
 
-- **Windows:** `unimcp-windows-x64.msi` installs uniMCP for your user account,
-  adds a Start menu entry and makes the `unimcp` command available. No
-  administrator rights are required.
-- **Any platform:** the single `unimcp` file for your system runs without
-  installation.
-
-Then start uniMCP.
-
-The dashboard opens in your browser. From there you can connect your services,
-try out the tools, and add uniMCP to Claude Desktop, Claude Code, Codex or Gemini CLI
-with one click. The configuration for any other AI assistant is there to copy.
-
-Under **Settings** you can add custom instructions, for example your degree
-programme or where you keep your examination regulations.
-
-Browser sign-in for Moodle is currently available on Windows only. On other
-platforms, run `unimcp login moodle` and paste the link when prompted.
+Start it and the dashboard opens in the browser. Connect the university services there
+and add uniMCP to Claude Desktop, Claude Code, Codex or Gemini CLI with one
+click.
 
 ### Running on a server
 

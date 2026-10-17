@@ -45,6 +45,8 @@ You need a machine that is always on, such as a small cloud server, with
 
    ![Inviting people](../docs/screenshots/admin.png)
 
+## Addresses
+
 With the domain `unimcp.example.org`, the addresses are:
 
 | Address                            | For                  |
@@ -56,6 +58,8 @@ With the domain `unimcp.example.org`, the addresses are:
 The HTTPS certificates are set up automatically.
 
 ## Updates
+
+To update uniMCP, pull the latest version and run the update script:
 
 ```sh
 git pull
