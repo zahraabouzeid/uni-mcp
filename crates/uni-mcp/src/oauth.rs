@@ -8,7 +8,7 @@ use axum::http::header::CACHE_CONTROL;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use axum::{Form, Json, Router};
+use axum::{Form, Json, Router, middleware};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use reqwest::Url;
@@ -19,6 +19,7 @@ use sha2::{Digest, Sha256};
 use uni_core::Error;
 
 use crate::accounts::{self, Accounts, Person, fingerprint, random_code};
+use crate::guard::{self, Guard, Kind};
 use crate::hosting;
 use crate::store::{Database, sql};
 
@@ -407,20 +408,30 @@ struct Web {
     base: Arc<str>,
 }
 
-pub fn routes(oauth: Arc<OAuth>, accounts: Arc<Accounts>, base: &str) -> Router {
+pub fn routes(
+    oauth: Arc<OAuth>,
+    accounts: Arc<Accounts>,
+    base: &str,
+    guard: &Arc<Guard>,
+) -> Router {
+    let limited = |kind| middleware::from_fn_with_state((guard.clone(), kind), guard::limit);
     Router::new()
         .route("/.well-known/oauth-protected-resource", get(resource))
         .route("/.well-known/oauth-protected-resource/mcp", get(resource))
         .route("/.well-known/oauth-authorization-server", get(issuer))
-        .route("/oauth/register", post(register))
-        .route("/oauth/token", post(token))
+        .route(
+            "/oauth/register",
+            post(register).layer(limited(Kind::Registration)),
+        )
+        .route("/oauth/token", post(token).layer(limited(Kind::Token)))
         .with_state(web(oauth, accounts, base))
 }
 
-pub fn api(oauth: Arc<OAuth>, accounts: Arc<Accounts>, base: &str) -> Router {
+pub fn api(oauth: Arc<OAuth>, accounts: Arc<Accounts>, base: &str, guard: &Arc<Guard>) -> Router {
+    let limited = middleware::from_fn_with_state((guard.clone(), Kind::Token), guard::limit);
     Router::new()
         .route("/oauth/app", get(app))
-        .route("/oauth/answer", post(answer))
+        .route("/oauth/answer", post(answer).layer(limited))
         .route("/oauth/connected", get(connected))
         .route("/oauth/disconnect", post(disconnect))
         .with_state(web(oauth, accounts, base))
@@ -987,8 +998,9 @@ mod tests {
             let database = crate::store::Database::open(&folder).expect("database");
             let oauth = Arc::new(OAuth::new(database));
             let accounts = Arc::new(accounts);
-            let router = routes(oauth.clone(), accounts.clone(), BASE)
-                .nest("/api", api(oauth, accounts, BASE));
+            let guard = Guard::new(false);
+            let router = routes(oauth.clone(), accounts.clone(), BASE, &guard)
+                .nest("/api", api(oauth, accounts, BASE, &guard));
             (router, member_session, admin_session, folder)
         }
 

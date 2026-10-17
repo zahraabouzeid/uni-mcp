@@ -1,5 +1,7 @@
 x-unimcp: &unimcp
   restart: unless-stopped
+  environment: &environment
+    UNIMCP_BEHIND_PROXY: "true"
   expose:
     - "8787"
     - "8788"
@@ -16,6 +18,7 @@ services:
     <<: *unimcp
     image: ghcr.io/zahraabouzeid/unimcp:latest
     environment:
+      <<: *environment
       UNIMCP_PUBLIC_URL: https://${DOMAIN:?set DOMAIN in .env}
       UNIMCP_ADMIN_URL: https://admin.${DOMAIN:?set DOMAIN in .env}
     volumes:
@@ -27,6 +30,7 @@ services:
     profiles:
       - dev
     environment:
+      <<: *environment
       UNIMCP_PUBLIC_URL: https://dev.${DOMAIN:?set DOMAIN in .env}
       UNIMCP_ADMIN_URL: https://admin.dev.${DOMAIN:?set DOMAIN in .env}
     volumes:
