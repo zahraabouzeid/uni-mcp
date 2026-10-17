@@ -1,3 +1,0 @@
-[mcp_servers.uniMCP]
-command = "unimcp"
-args = ["serve"]
