@@ -13,12 +13,12 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use reqwest::Url;
 use rusqlite::{Connection, OptionalExtension, params};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use uni_core::Error;
 
-use crate::accounts::{self, Accounts, fingerprint, random_code};
+use crate::accounts::{self, Accounts, Person, fingerprint, random_code};
 use crate::hosting;
 use crate::store::{Database, sql};
 
@@ -38,6 +38,7 @@ pub enum Refusal {
     Request(String),
     App,
     Grant,
+    LoggedOut,
     Server(String),
 }
 
@@ -341,6 +342,55 @@ impl OAuth {
         });
         found.ok().flatten()
     }
+
+    pub fn connected_apps(&self, account: &str, now: u64) -> Result<Vec<ConnectedApp>> {
+        let apps = self.database.with(|connection| {
+            let mut statement = connection
+                .prepare(
+                    "SELECT connections.id, apps.name, connections.connected, connections.last_used
+                     FROM connections JOIN apps ON apps.id = connections.app
+                     WHERE connections.account = ?1 AND connections.last_used + ?2 > ?3
+                     ORDER BY connections.connected DESC, connections.rowid DESC",
+                )
+                .map_err(sql)?;
+            let apps = statement
+                .query_map(params![account, UNUSED_CONNECTION_SECONDS, now], |row| {
+                    Ok(ConnectedApp {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        connected: row.get(2)?,
+                        last_used: row.get(3)?,
+                    })
+                })
+                .map_err(sql)?
+                .collect::<rusqlite::Result<_>>();
+            apps.map_err(sql)
+        })?;
+        Ok(apps)
+    }
+
+    pub fn disconnect(&self, account: &str, id: &str) -> Result<()> {
+        let removed = self.database.with(|connection| {
+            connection
+                .execute(
+                    "DELETE FROM connections WHERE id = ?1 AND account = ?2",
+                    params![id, account],
+                )
+                .map_err(sql)
+        })?;
+        match removed {
+            0 => Err(Refusal::Request("no such connected app".into())),
+            _ => Ok(()),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+pub struct ConnectedApp {
+    pub id: String,
+    pub name: String,
+    pub connected: u64,
+    pub last_used: u64,
 }
 
 fn server(refusal: Refusal) -> Error {
@@ -371,6 +421,8 @@ pub fn api(oauth: Arc<OAuth>, accounts: Arc<Accounts>, base: &str) -> Router {
     Router::new()
         .route("/oauth/app", get(app))
         .route("/oauth/answer", post(answer))
+        .route("/oauth/connected", get(connected))
+        .route("/oauth/disconnect", post(disconnect))
         .with_state(web(oauth, accounts, base))
 }
 
@@ -413,6 +465,10 @@ async fn issuer(State(web): State<Web>) -> Json<Value> {
 impl IntoResponse for Refusal {
     fn into_response(self) -> Response {
         let (status, error, description) = match self {
+            Self::LoggedOut => {
+                let body = json!({ "error": "log in first" });
+                return (StatusCode::UNAUTHORIZED, Json(body)).into_response();
+            }
             Self::Request(description) => (StatusCode::BAD_REQUEST, "invalid_request", description),
             Self::App => (
                 StatusCode::UNAUTHORIZED,
@@ -542,10 +598,7 @@ async fn answer(
     headers: HeaderMap,
     Json(answer): Json<Answer>,
 ) -> Result<Response> {
-    let Some(person) = hosting::person_in(&web.accounts, &headers).filter(|p| !p.admin) else {
-        let body = json!({ "error": "log in first" });
-        return Ok((StatusCode::UNAUTHORIZED, Json(body)).into_response());
-    };
+    let person = member(&web, &headers)?;
     web.oauth
         .app_name(&answer.client_id, &answer.redirect_uri)?;
     let mut back = Url::parse(&answer.redirect_uri)
@@ -574,6 +627,33 @@ async fn answer(
         query.append_pair("iss", &web.base);
     }
     Ok(Json(json!({ "redirect": back.as_str() })).into_response())
+}
+
+fn member(web: &Web, headers: &HeaderMap) -> Result<Person> {
+    hosting::person_in(&web.accounts, headers)
+        .filter(|person| !person.admin)
+        .ok_or(Refusal::LoggedOut)
+}
+
+async fn connected(State(web): State<Web>, headers: HeaderMap) -> Result<Response> {
+    let person = member(&web, &headers)?;
+    let apps = web.oauth.connected_apps(&person.id, accounts::now())?;
+    Ok(Json(json!({ "apps": apps })).into_response())
+}
+
+#[derive(Deserialize)]
+struct Disconnect {
+    id: String,
+}
+
+async fn disconnect(
+    State(web): State<Web>,
+    headers: HeaderMap,
+    Json(body): Json<Disconnect>,
+) -> Result<Response> {
+    let person = member(&web, &headers)?;
+    web.oauth.disconnect(&person.id, &body.id)?;
+    Ok(Json(json!({ "ok": true })).into_response())
 }
 
 #[cfg(test)]
@@ -798,6 +878,42 @@ mod tests {
                 .oauth
                 .refresh(&still.refresh, &app, 179 * DAY + 1)
                 .is_err()
+        );
+        server.done();
+    }
+
+    #[test]
+    fn a_member_sees_and_disconnects_only_their_own_apps() {
+        let server = server("oauth-connected");
+        let (app, tokens) = server.connect(0);
+        let apps = server
+            .oauth
+            .connected_apps(&server.member, 1)
+            .expect("apps");
+        assert_eq!(apps.len(), 1);
+        assert_eq!(apps[0].name, "Claude");
+        let admin = &server.accounts.people().expect("people")[0].id;
+        assert!(
+            server
+                .oauth
+                .connected_apps(admin, 1)
+                .expect("none")
+                .is_empty()
+        );
+        assert!(server.oauth.disconnect(admin, &apps[0].id).is_err());
+
+        server
+            .oauth
+            .disconnect(&server.member, &apps[0].id)
+            .expect("disconnect");
+        assert_eq!(server.oauth.account_of(&tokens.access, 1), None);
+        assert!(server.oauth.refresh(&tokens.refresh, &app, 1).is_err());
+        assert!(
+            server
+                .oauth
+                .connected_apps(&server.member, 1)
+                .expect("apps")
+                .is_empty()
         );
         server.done();
     }
