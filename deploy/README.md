@@ -43,6 +43,8 @@ You need a machine that is always on, such as a small cloud server, with
 7. Invite people under **People**. They open the invite, create their account
    and connect their AI assistants under **Setup**.
 
+   ![Inviting people](../docs/screenshots/admin.png)
+
 With the domain `unimcp.example.org`, the addresses are:
 
 | Address                            | For                  |
@@ -59,6 +61,3 @@ The HTTPS certificates are set up automatically.
 git pull
 ./update.sh app
 ```
-
-This backs up the server's data first and keeps the last seven backups in
-`backups/`.
