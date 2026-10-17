@@ -1,7 +1,5 @@
-//! Sign-in for AI apps on a server: OAuth 2.1 with PKCE. An app registers
-//! itself, a member allows it after logging in, and the app gets tokens that
-//! act for that member's account only. Codes and tokens are stored as
-//! fingerprints, so the database alone connects no app.
+//! Sign-in for AI apps on a server: OAuth 2.1 with PKCE. Codes and tokens are
+//! stored as fingerprints, so the database alone connects no app.
 
 use std::sync::Arc;
 
@@ -37,11 +35,8 @@ const MAX_APP_NAME_CHARS: usize = 100;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Refusal {
-    /// The request itself is wrong, e.g. a redirect that is not allowed.
     Request(String),
-    /// The app is not registered here.
     App,
-    /// The code or refresh token is unknown, used up, expired or not the app's.
     Grant,
     Server(String),
 }
@@ -78,7 +73,6 @@ fn forget_expired(connection: &Connection, now: u64) -> Result<()> {
     )))
 }
 
-/// Only HTTPS, or a port on this computer for apps that run on it.
 fn allowed_redirect(uri: &str) -> bool {
     let Ok(url) = Url::parse(uri) else {
         return false;
@@ -120,8 +114,7 @@ impl OAuth {
         Self { database }
     }
 
-    /// Registers an app and returns its id. Anyone may register, so an app
-    /// nobody connects is forgotten after a day.
+    /// Anyone may register, so an app nobody connects is forgotten after a day.
     pub fn register(&self, name: &str, redirects: &[String], now: u64) -> Result<String> {
         let name = name.trim();
         if name.is_empty() || name.chars().count() > MAX_APP_NAME_CHARS {
@@ -177,7 +170,6 @@ impl OAuth {
             .map_err(Refusal::from)?
     }
 
-    /// The name of the app asking, once it is clear the code may go to `redirect`.
     pub fn app_name(&self, app: &str, redirect: &str) -> Result<String> {
         let name: Option<String> = self.database.with(|connection| {
             connection
@@ -194,7 +186,6 @@ impl OAuth {
         name.ok_or(Refusal::App)
     }
 
-    /// A member allowed the app: the code it exchanges for tokens.
     pub fn allow(
         &self,
         account: &str,
@@ -228,8 +219,7 @@ impl OAuth {
         Ok(code)
     }
 
-    /// Turns a code into a connection with its first tokens. A code works once,
-    /// even when the attempt fails.
+    /// A code works once, even when the attempt fails.
     pub fn exchange(
         &self,
         code: &str,
@@ -286,8 +276,6 @@ impl OAuth {
             .map_err(Refusal::from)?
     }
 
-    /// New tokens for old: the refresh token works once, and the access
-    /// tokens issued with it stop working.
     pub fn refresh(&self, refresh: &str, app: &str, now: u64) -> Result<Tokens> {
         self.database
             .with(|connection| {
@@ -326,7 +314,6 @@ impl OAuth {
             .map_err(Refusal::from)?
     }
 
-    /// The account an access token acts for, if it is still valid.
     pub fn account_of(&self, access: &str, now: u64) -> Option<String> {
         let found = self.database.with(|connection| {
             let found: Option<(String, String, u64)> = connection
@@ -367,11 +354,9 @@ fn server(refusal: Refusal) -> Error {
 struct Web {
     oauth: Arc<OAuth>,
     accounts: Arc<Accounts>,
-    /// Where members reach the server, which is also the issuer of the tokens.
     base: Arc<str>,
 }
 
-/// What AI apps call: the metadata to find the server, registration and tokens.
 pub fn routes(oauth: Arc<OAuth>, accounts: Arc<Accounts>, base: &str) -> Router {
     Router::new()
         .route("/.well-known/oauth-protected-resource", get(resource))
@@ -382,7 +367,6 @@ pub fn routes(oauth: Arc<OAuth>, accounts: Arc<Accounts>, base: &str) -> Router 
         .with_state(web(oauth, accounts, base))
 }
 
-/// What the consent page calls, under `/api`, with the member's session.
 pub fn api(oauth: Arc<OAuth>, accounts: Arc<Accounts>, base: &str) -> Router {
     Router::new()
         .route("/oauth/app", get(app))
@@ -553,8 +537,6 @@ struct Answer {
     allow: bool,
 }
 
-/// The member's answer on the consent page. The page sends the browser on to
-/// the app, so the address is only built for a redirect the app registered.
 async fn answer(
     State(web): State<Web>,
     headers: HeaderMap,

@@ -458,8 +458,6 @@ fn members_router(host: Arc<Host>, api: Router, mcp: Arc<AccountMcp>) -> Router 
 
 type AccountService = StreamableHttpService<UniServer, LocalSessionManager>;
 
-/// `/mcp` on a server: every request needs an access token from an app a
-/// member allowed, and is served with that member's university and logins.
 /// Each account has its own sessions, so a session id works for its account only.
 struct AccountMcp {
     oauth: Arc<OAuth>,
@@ -491,7 +489,6 @@ impl AccountMcp {
         }
     }
 
-    /// A new session reads the account's settings, so a change takes effect in the next one.
     fn service_of(&self, account: &str) -> AccountService {
         let mut services = self.services.lock().unwrap_or_else(PoisonError::into_inner);
         services
