@@ -17,7 +17,7 @@ services:
     image: ghcr.io/zahraabouzeid/unimcp:latest
     environment:
       UNIMCP_PUBLIC_URL: https://${DOMAIN:?set DOMAIN in .env}
-      UNIMCP_ADMIN_URL: https://${DOMAIN:?set DOMAIN in .env}:8443
+      UNIMCP_ADMIN_URL: https://admin.${DOMAIN:?set DOMAIN in .env}
     volumes:
       - data:/data
 
@@ -25,8 +25,8 @@ services:
     <<: *unimcp
     image: ghcr.io/zahraabouzeid/unimcp:edge
     environment:
-      UNIMCP_PUBLIC_URL: https://${DOMAIN:?set DOMAIN in .env}:9444
-      UNIMCP_ADMIN_URL: https://${DOMAIN:?set DOMAIN in .env}:9443
+      UNIMCP_PUBLIC_URL: https://dev.${DOMAIN:?set DOMAIN in .env}
+      UNIMCP_ADMIN_URL: https://admin.dev.${DOMAIN:?set DOMAIN in .env}
     volumes:
       - data_dev:/data
 
@@ -39,10 +39,6 @@ services:
       - "80:80"
       - "443:443"
       - "443:443/udp"
-      - "8443:8443"
-      - "8444:8444"
-      - "9443:9443"
-      - "9444:9444"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
