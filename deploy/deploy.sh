@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 cd "$(dirname "$0")"
-service=${1:?usage: update.sh app|app-dev}
+service=${1:-app}
 if [ "$service" = app-dev ]; then
 	export COMPOSE_PROFILES=dev
 fi

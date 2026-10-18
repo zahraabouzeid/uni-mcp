@@ -59,9 +59,9 @@ The HTTPS certificates are set up automatically.
 
 ## Updates
 
-To update uniMCP, pull the latest version and run the update script:
+To update uniMCP, pull the latest version and run the deploy script:
 
 ```sh
 git pull
-./update.sh app
+./deploy.sh
 ```
