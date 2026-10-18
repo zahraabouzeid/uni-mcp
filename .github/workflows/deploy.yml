@@ -32,5 +32,5 @@ jobs:
           DOMAIN: ${{ vars.DOMAIN }}
         run: printf 'DOMAIN=%s\n' "$DOMAIN" > deploy/.env
       - run: ssh "$TARGET" "mkdir -p $FOLDER"
-      - run: scp deploy/.env deploy/compose.yaml deploy/Caddyfile deploy/update.sh "$TARGET:$FOLDER/"
-      - run: ssh "$TARGET" "sh $FOLDER/update.sh ${{ inputs.service }}"
+      - run: scp deploy/.env deploy/compose.yaml deploy/Caddyfile deploy/deploy.sh "$TARGET:$FOLDER/"
+      - run: ssh "$TARGET" "sh $FOLDER/deploy.sh ${{ inputs.service }}"
