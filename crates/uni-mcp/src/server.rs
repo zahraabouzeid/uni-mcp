@@ -52,7 +52,7 @@ If a tool says the student is not logged in, ask them to run `unimcp` and connec
 the dashboard; never ask for passwords, tokens or links in the chat.\n\n\
 Reading files: a PDF comes back as text by default, which leaves out figures and scrambles formulas \
 and tables. For exercise sheets, formulas, diagrams, tables and scans, look at the pages themselves \
-with `view: pages` (at most 5 pages per call) before answering. Start with the text view to find \
+with `view: pages` (at most 20 pages per call) before answering. Start with the text view to find \
 the right file or page, then switch to pages for the part that matters.\n\n\
 The timetable does not include cancelled sessions, so a session that is not listed may have been \
 cancelled.";
@@ -142,8 +142,8 @@ impl PartArgs {
 }
 
 /// `text` (the default) gives the text of the file. `pages` gives pictures,
-/// at most 5 per call: of a PDF its pages instead of their text, so set
-/// `pages` to a range like `1-5`; of a presentation or a Word file the
+/// at most 20 per call: of a PDF its pages instead of their text, so set
+/// `pages` to a range like `1-20`; of a presentation or a Word file the
 /// pictures placed in it, next to its text. Use it for diagrams, formulas,
 /// tables and scans, where the text is not enough.
 #[derive(Clone, Copy, Default, Serialize, Deserialize, schemars::JsonSchema)]

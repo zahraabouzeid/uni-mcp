@@ -10,12 +10,15 @@ use hayro::{PixmapSettings, RenderCache, RenderSettings};
 
 use crate::model::{Document, Image};
 use crate::office::{self, Office, Part};
-use crate::{Error, Result, archive};
+use crate::{Error, Result, archive, pdf_lines};
 
 pub const MAX_FILE_BYTES: usize = 50 * 1024 * 1024;
 pub const MAX_TEXT_BYTES: usize = 200 * 1024;
 /// Each page picture costs the model several times a page of text.
-pub const MAX_PAGE_IMAGES: usize = 5;
+pub const MAX_PAGE_IMAGES: usize = 20;
+/// All pictures of one call together, well below the 32 MB a request to the
+/// model may have.
+pub const MAX_IMAGES_BYTES: usize = 15 * 1024 * 1024;
 /// MCP clients refuse pictures much larger than this.
 pub const MAX_PICTURE_BYTES: usize = 4 * 1024 * 1024;
 const PAGE_IMAGE_SIDE: f32 = 1400.0;
@@ -162,6 +165,10 @@ fn showable(bytes: &[u8], names: &[String], page: Option<usize>) -> Result<(Vec<
     Ok((images, left_out))
 }
 
+fn size_of(images: &[Image]) -> usize {
+    images.iter().map(|image| image.data.len()).sum()
+}
+
 /// Slides with their text and the pictures placed on them, for as many
 /// slides as fit into the picture limit.
 fn part_pictures(
@@ -176,7 +183,10 @@ fn part_pictures(
     for number in wanted.clone() {
         let part = &parts[number - 1];
         let (mut shown, mut left_out) = showable(bytes, &part.pictures, Some(number))?;
-        if last.is_some() && images.len() + shown.len() > MAX_PAGE_IMAGES {
+        if last.is_some()
+            && (images.len() + shown.len() > MAX_PAGE_IMAGES
+                || size_of(&images) + size_of(&shown) > MAX_IMAGES_BYTES)
+        {
             break;
         }
         if shown.len() > MAX_PAGE_IMAGES {
@@ -220,11 +230,15 @@ fn body_pictures(bytes: &[u8], body: &Part, pages: Option<&str>) -> Result<Docum
             wanted.start() + MAX_PAGE_IMAGES - 1
         )));
     }
-    let (images, left_out) = showable(
+    let (mut images, mut left_out) = showable(
         bytes,
         &body.pictures[wanted.start() - 1..*wanted.end()],
         None,
     )?;
+    while images.len() > 1 && size_of(&images) > MAX_IMAGES_BYTES {
+        images.pop();
+        left_out += 1;
+    }
     let mut note = format!(
         "[pictures {}-{} of {count}; `pages` picks others",
         wanted.start(),
@@ -245,7 +259,7 @@ fn unreadable(why: impl std::fmt::Display) -> Error {
 
 /// The PDF libraries panic on some damaged files.
 fn page_texts(bytes: &[u8]) -> Result<Vec<String>> {
-    panic::catch_unwind(|| pdf_extract::extract_text_from_mem_by_pages(bytes))
+    panic::catch_unwind(|| pdf_lines::page_texts(bytes))
         .map_err(|_| unreadable("it is damaged or uses an unsupported feature"))?
         .map_err(unreadable)
 }
@@ -323,6 +337,8 @@ fn render(bytes: &[u8], pages: Option<&str>) -> Result<Document> {
 
     let cache = RenderCache::new();
     let mut images = Vec::new();
+    let mut size = 0;
+    let mut last = *wanted.start();
     for number in wanted.clone() {
         let page = all
             .get(number - 1)
@@ -340,17 +356,23 @@ fn render(bytes: &[u8], pages: Option<&str>) -> Result<Document> {
                 bg_color: WHITE,
             },
         );
+        let data = pixmap.into_png().map_err(unreadable)?;
+        size += data.len();
+        if !images.is_empty() && size > MAX_IMAGES_BYTES {
+            break;
+        }
         images.push(Image {
             mime_type: "image/png",
-            data: pixmap.into_png().map_err(unreadable)?,
+            data,
             page: Some(number),
         });
+        last = number;
     }
     Ok(Document {
         text: String::new(),
         page_count: Some(all.len()),
-        pages: Some(format!("{}-{}", wanted.start(), wanted.end())),
-        truncated: false,
+        pages: Some(format!("{}-{last}", wanted.start())),
+        truncated: last < *wanted.end(),
         images,
     })
 }
@@ -389,7 +411,15 @@ mod tests {
     use crate::office::testing::{PNG, archive, archive_of, placing, relations, slide};
 
     fn pdf(pages: &[&str]) -> Vec<u8> {
-        let count = pages.len();
+        let streams: Vec<String> = pages
+            .iter()
+            .map(|line| format!("BT /F1 12 Tf 72 720 Td ({line}) Tj ET"))
+            .collect();
+        pdf_of(&streams)
+    }
+
+    fn pdf_of(streams: &[String]) -> Vec<u8> {
+        let count = streams.len();
         let kids: Vec<String> = (0..count).map(|i| format!("{} 0 R", 4 + 2 * i)).collect();
         let mut objects = vec![
             "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
@@ -399,8 +429,7 @@ mod tests {
             ),
             "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_owned(),
         ];
-        for (i, line) in pages.iter().enumerate() {
-            let stream = format!("BT /F1 12 Tf 72 720 Td ({line}) Tj ET");
+        for (i, stream) in streams.iter().enumerate() {
             objects.push(format!(
                 "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] \
                  /Resources << /Font << /F1 3 0 R >> >> /Contents {} 0 R >>",
@@ -518,6 +547,42 @@ mod tests {
         }
     }
 
+    fn page_text(stream: &str) -> String {
+        let document = text(
+            &pdf_of(&[format!("BT /F1 12 Tf 72 720 Td {stream} ET")]),
+            None,
+        )
+        .expect("pdf");
+        document.text
+    }
+
+    #[test]
+    fn raised_and_lowered_characters_stay_on_their_line() {
+        let square = page_text("(x) Tj /F1 8 Tf 6 4.5 Td (2) Tj /F1 12 Tf 4.448 -4.5 Td ( + 1) Tj");
+        assert!(square.contains("x^2 + 1"), "{square}");
+
+        let index = page_text("(a) Tj /F1 8 Tf 6.672 -3 Td (i) Tj");
+        assert!(index.contains("a_i"), "{index}");
+
+        let longer = page_text("(e) Tj /F1 8 Tf 6.672 5 Td (-x) Tj");
+        assert!(longer.contains("e^{-x}"), "{longer}");
+
+        let both = page_text("(x) Tj /F1 8 Tf 6 -2 Td (i) Tj 0 6 Td (2) Tj");
+        assert!(both.contains("x_i^2"), "{both}");
+    }
+
+    #[test]
+    fn a_small_fraction_is_written_with_a_slash() {
+        let fraction = page_text("(mit ) Tj /F1 8 Tf 24 5 Td (1) Tj 0 -9 Td (n) Tj");
+        assert!(fraction.contains("mit 1/n"), "{fraction}");
+    }
+
+    #[test]
+    fn lines_and_paragraphs_are_still_kept_apart() {
+        let lines = page_text("(First) Tj 0 -14 Td (Second) Tj 0 -40 Td (Third) Tj");
+        assert!(lines.contains("First\nSecond\n\nThird"), "{lines:?}");
+    }
+
     #[test]
     fn a_pdf_without_text_points_to_the_page_view() {
         let error = text(&pdf(&[""]), None).expect_err("no text");
@@ -558,13 +623,13 @@ mod tests {
     fn more_pictures_than_allowed_are_refused_with_a_range_to_ask_for() {
         let bytes = pdf(&["Slide"; MAX_PAGE_IMAGES + 2]);
         let error = pictures(&bytes, None).expect_err("too many");
-        assert!(error.to_string().contains("7 pages"), "{error}");
-        assert!(error.to_string().contains("1-5"), "{error}");
+        assert!(error.to_string().contains("22 pages"), "{error}");
+        assert!(error.to_string().contains("1-20"), "{error}");
 
-        let later = pictures(&bytes, Some("2-7")).expect_err("too many");
-        assert!(later.to_string().contains("2-6"), "{later}");
+        let later = pictures(&bytes, Some("2-22")).expect_err("too many");
+        assert!(later.to_string().contains("2-21"), "{later}");
 
-        let allowed = pictures(&bytes, Some("3-7")).expect("five pages");
+        let allowed = pictures(&bytes, Some("3-22")).expect("twenty pages");
         assert_eq!(allowed.images.len(), MAX_PAGE_IMAGES);
         assert!(!allowed.truncated);
     }
@@ -635,7 +700,7 @@ mod tests {
 
     #[test]
     fn slides_stop_where_the_picture_limit_is_reached() {
-        let bytes = presentation(&[3, 2, 1]);
+        let bytes = presentation(&[MAX_PAGE_IMAGES - 3, 3, 1]);
         let first = pictures(&bytes, None).expect("pptx");
         assert_eq!(first.pages.as_deref(), Some("1-2"));
         assert!(first.truncated);
@@ -646,6 +711,32 @@ mod tests {
         assert_eq!(rest.pages.as_deref(), Some("3-3"));
         assert!(!rest.truncated);
         assert_eq!(rest.images.len(), 1);
+    }
+
+    #[test]
+    fn slides_stop_where_the_pictures_get_too_large() {
+        let large = [PNG, &vec![0; MAX_PICTURE_BYTES - PNG.len()]].concat();
+        let mut files: Vec<(String, Vec<u8>)> = Vec::new();
+        for number in 1..=4 {
+            files.push((
+                format!("ppt/slides/slide{number}.xml"),
+                placing("p:sld", &format!("Slide {number}"), &["rId1"]).into_bytes(),
+            ));
+            files.push((
+                format!("ppt/slides/_rels/slide{number}.xml.rels"),
+                relations(&[("rId1", &format!("../media/s{number}.png"))]).into_bytes(),
+            ));
+            files.push((format!("ppt/media/s{number}.png"), large.clone()));
+        }
+        let files: Vec<(&str, &[u8])> = files
+            .iter()
+            .map(|(name, content)| (name.as_str(), content.as_slice()))
+            .collect();
+
+        let document = pictures(&archive_of(&files), None).expect("pptx");
+        assert_eq!(document.pages.as_deref(), Some("1-3"));
+        assert!(document.truncated);
+        assert_eq!(document.images.len(), 3);
     }
 
     #[test]
@@ -668,8 +759,9 @@ mod tests {
 
     #[test]
     fn a_word_document_hands_over_its_pictures_a_few_at_a_time() {
-        let ids: Vec<String> = (1..=7).map(|n| format!("rId{n}")).collect();
-        let targets: Vec<String> = (1..=7).map(|n| format!("media/image{n}.png")).collect();
+        let count = MAX_PAGE_IMAGES + 2;
+        let ids: Vec<String> = (1..=count).map(|n| format!("rId{n}")).collect();
+        let targets: Vec<String> = (1..=count).map(|n| format!("media/image{n}.png")).collect();
         let ids: Vec<&str> = ids.iter().map(String::as_str).collect();
         let pairs: Vec<(&str, &str)> = ids
             .iter()
@@ -696,12 +788,12 @@ mod tests {
 
         let first = pictures(&bytes, None).expect("docx");
         assert_eq!(first.images.len(), MAX_PAGE_IMAGES);
-        assert!(first.text.starts_with("[pictures 1-5 of 7"));
+        assert!(first.text.starts_with("[pictures 1-20 of 22"));
         assert!(first.text.ends_with("Lab report"));
 
-        let rest = pictures(&bytes, Some("6-7")).expect("docx");
+        let rest = pictures(&bytes, Some("21-22")).expect("docx");
         assert_eq!(rest.images.len(), 2);
-        assert!(pictures(&bytes, Some("1-7")).is_err());
+        assert!(pictures(&bytes, Some("1-22")).is_err());
         assert!(text(&bytes, None).expect("docx").images.is_empty());
     }
 
