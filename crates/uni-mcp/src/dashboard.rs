@@ -848,6 +848,7 @@ mod tests {
     async fn the_page_is_served_without_a_key() {
         assert_eq!(status_of("/", None).await, StatusCode::OK);
         assert_eq!(status_of("/server", None).await, StatusCode::OK);
+        assert_eq!(status_of("/favicon.ico", None).await, StatusCode::OK);
         assert_eq!(
             status_of("/no-such-file.js", None).await,
             StatusCode::NOT_FOUND
