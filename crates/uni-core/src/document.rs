@@ -10,7 +10,7 @@ use hayro::{PixmapSettings, RenderCache, RenderSettings};
 
 use crate::model::{Document, Image};
 use crate::office::{self, Office, Part};
-use crate::{Error, Result, archive};
+use crate::{Error, Result, archive, pdf_lines};
 
 pub const MAX_FILE_BYTES: usize = 50 * 1024 * 1024;
 pub const MAX_TEXT_BYTES: usize = 200 * 1024;
@@ -259,7 +259,7 @@ fn unreadable(why: impl std::fmt::Display) -> Error {
 
 /// The PDF libraries panic on some damaged files.
 fn page_texts(bytes: &[u8]) -> Result<Vec<String>> {
-    panic::catch_unwind(|| pdf_extract::extract_text_from_mem_by_pages(bytes))
+    panic::catch_unwind(|| pdf_lines::page_texts(bytes))
         .map_err(|_| unreadable("it is damaged or uses an unsupported feature"))?
         .map_err(unreadable)
 }
@@ -411,7 +411,15 @@ mod tests {
     use crate::office::testing::{PNG, archive, archive_of, placing, relations, slide};
 
     fn pdf(pages: &[&str]) -> Vec<u8> {
-        let count = pages.len();
+        let streams: Vec<String> = pages
+            .iter()
+            .map(|line| format!("BT /F1 12 Tf 72 720 Td ({line}) Tj ET"))
+            .collect();
+        pdf_of(&streams)
+    }
+
+    fn pdf_of(streams: &[String]) -> Vec<u8> {
+        let count = streams.len();
         let kids: Vec<String> = (0..count).map(|i| format!("{} 0 R", 4 + 2 * i)).collect();
         let mut objects = vec![
             "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
@@ -421,8 +429,7 @@ mod tests {
             ),
             "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_owned(),
         ];
-        for (i, line) in pages.iter().enumerate() {
-            let stream = format!("BT /F1 12 Tf 72 720 Td ({line}) Tj ET");
+        for (i, stream) in streams.iter().enumerate() {
             objects.push(format!(
                 "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] \
                  /Resources << /Font << /F1 3 0 R >> >> /Contents {} 0 R >>",
@@ -538,6 +545,42 @@ mod tests {
             assert!(text(&bytes, Some(pages)).is_err(), "{pages}");
             assert!(pictures(&bytes, Some(pages)).is_err(), "{pages}");
         }
+    }
+
+    fn page_text(stream: &str) -> String {
+        let document = text(
+            &pdf_of(&[format!("BT /F1 12 Tf 72 720 Td {stream} ET")]),
+            None,
+        )
+        .expect("pdf");
+        document.text
+    }
+
+    #[test]
+    fn raised_and_lowered_characters_stay_on_their_line() {
+        let square = page_text("(x) Tj /F1 8 Tf 6 4.5 Td (2) Tj /F1 12 Tf 4.448 -4.5 Td ( + 1) Tj");
+        assert!(square.contains("x^2 + 1"), "{square}");
+
+        let index = page_text("(a) Tj /F1 8 Tf 6.672 -3 Td (i) Tj");
+        assert!(index.contains("a_i"), "{index}");
+
+        let longer = page_text("(e) Tj /F1 8 Tf 6.672 5 Td (-x) Tj");
+        assert!(longer.contains("e^{-x}"), "{longer}");
+
+        let both = page_text("(x) Tj /F1 8 Tf 6 -2 Td (i) Tj 0 6 Td (2) Tj");
+        assert!(both.contains("x_i^2"), "{both}");
+    }
+
+    #[test]
+    fn a_small_fraction_is_written_with_a_slash() {
+        let fraction = page_text("(mit ) Tj /F1 8 Tf 24 5 Td (1) Tj 0 -9 Td (n) Tj");
+        assert!(fraction.contains("mit 1/n"), "{fraction}");
+    }
+
+    #[test]
+    fn lines_and_paragraphs_are_still_kept_apart() {
+        let lines = page_text("(First) Tj 0 -14 Td (Second) Tj 0 -40 Td (Third) Tj");
+        assert!(lines.contains("First\nSecond\n\nThird"), "{lines:?}");
     }
 
     #[test]

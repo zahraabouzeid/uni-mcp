@@ -7,6 +7,7 @@ pub mod document;
 pub mod error;
 pub mod model;
 mod office;
+mod pdf_lines;
 pub mod profile;
 pub mod secrets;
 
