@@ -6,6 +6,12 @@ on:
       service:
         type: string
         required: true
+  workflow_dispatch:
+    inputs:
+      service:
+        type: choice
+        options: [app, app-dev]
+        default: app
 
 jobs:
   server:
@@ -30,7 +36,14 @@ jobs:
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
       - env:
           DOMAIN: ${{ vars.DOMAIN }}
-        run: printf 'DOMAIN=%s\n' "$DOMAIN" > deploy/.env
+          SHARED_PROXY: ${{ vars.SHARED_PROXY }}
+        run: |
+          printf 'DOMAIN=%s\n' "$DOMAIN" > deploy/.env
+          if [ "$SHARED_PROXY" = true ]; then
+            printf 'COMPOSE_FILE=compose.yaml:compose.shared-proxy.yaml\n' >> deploy/.env
+          fi
       - run: ssh "$TARGET" "mkdir -p $FOLDER"
-      - run: scp deploy/.env deploy/compose.yaml deploy/Caddyfile deploy/deploy.sh "$TARGET:$FOLDER/"
+      - run: >
+          scp deploy/.env deploy/compose.yaml deploy/compose.shared-proxy.yaml
+          deploy/Caddyfile deploy/deploy.sh "$TARGET:$FOLDER/"
       - run: ssh "$TARGET" "sh $FOLDER/deploy.sh ${{ inputs.service }}"
