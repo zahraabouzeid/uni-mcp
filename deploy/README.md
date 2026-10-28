@@ -57,6 +57,20 @@ With the domain `unimcp.example.org`, the addresses are:
 
 The HTTPS certificates are set up automatically.
 
+## Behind your own proxy
+
+If the server already runs a reverse proxy for other services, uniMCP can use it instead of
+its own Caddy. Add this line to `.env`:
+
+```sh
+COMPOSE_FILE=compose.yaml:compose.shared-proxy.yaml
+```
+
+uniMCP then starts without Caddy and joins the Docker network `web` under the names
+`unimcp` and `unimcp-dev`. Point your proxy at `unimcp:8787` for the dashboard and MCP
+address, and at `unimcp:8788` for the admin. The deploy script creates the network if it
+is missing.
+
 ## Updates
 
 To update uniMCP, pull the latest version and run the deploy script:
