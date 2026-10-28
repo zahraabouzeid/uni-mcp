@@ -1,0 +1,22 @@
+services:
+  app:
+    networks:
+      default: {}
+      web:
+        aliases:
+          - unimcp
+
+  app-dev:
+    networks:
+      default: {}
+      web:
+        aliases:
+          - unimcp-dev
+
+  caddy:
+    profiles:
+      - own-proxy
+
+networks:
+  web:
+    external: true
